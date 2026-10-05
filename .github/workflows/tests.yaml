@@ -1,0 +1,31 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test_suit:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "latest"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      # The service and the contract run in one Django project, the hook agent - a
+      # process that is no service - in one of its own.
+      - name: Run tests
+        run: |
+          uv run pytest
+          uv run pytest tests/hook --ds=hook_project.settings

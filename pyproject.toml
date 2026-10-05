@@ -1,0 +1,109 @@
+[project]
+name = "arkitekt-service"
+dynamic = ["version"]
+description = "What a service of an Arkitekt hub is made with: the contract its image answers the installer, its declaration to rekuest, and its hook agent"
+authors = [{ name = "jhnnsrs", email = "jhnnsrs@gmail.com" }]
+requires-python = ">=3.12,<4"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+    "django>=5",
+    "httpx>=0.27",
+    "joserfc>=1.7",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+# Forwarding the provenance token of the request a signal is emitted in reads koherent's
+# context variable; without koherent, signals simply carry no token.
+koherent = ["koherent>=4.1"]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.8",
+    "pytest>=8",
+    "pytest-django>=4.11",
+    "python-semantic-release>=9.21.1",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["arkitekt_service"]
+
+[tool.hatch.build.targets.wheel]
+include = ["arkitekt_service"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+# The version is derived from the nearest git tag (vX.Y.Z); nothing in the
+# tree is bumped on release. Shallow CI clones see no tag and get the fallback.
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.pytest.ini_options]
+# The service's and the contract's tests run in `test_project`. The hook agent's run in a
+# project of their own — a process that is no service — and so in a run of their own:
+#   uv run pytest tests/hook --ds=hook_project.settings
+DJANGO_SETTINGS_MODULE = "test_project.settings"
+pythonpath = ["."]
+testpaths = ["tests/contract", "tests/service"]
+
+[tool.ruff]
+line-length = 200
+exclude = [".venv", "tests", "test_project", "hook_project", "test_app"]
+
+# The contract is the part an installer depends on: it is typed strictly, `Any` included.
+[tool.basedpyright]
+include = ["arkitekt_service/contract"]
+typeCheckingMode = "strict"
+reportAny = "error"
+reportExplicitAny = "error"
+[tool.semantic_release]
+# No version_toml/version_variables: the release version lives only in the git
+# tag, which hatch-vcs reads at build time. CI runs the version command with
+# `commit: false`, so PSR tags HEAD and creates the GitHub Release without
+# pushing a bump commit to the branch.
+#
+# The semantic-release GitHub Action runs in a Docker container without uv, so
+# install it first. PSR builds *before* it tags, so hatch-vcs is told the new
+# version explicitly ($NEW_VERSION is injected by PSR) instead of deriving a
+# `.devN+g...` local version that PyPI would reject.
+build_command = """
+    python -m pip install 'uv>=0.7.12'
+    export SETUPTOOLS_SCM_PRETEND_VERSION="$NEW_VERSION"
+    uv build
+"""
+
+# main -> stable X.Y.Z. next -> prereleases X.Y.Z-rc.N. N.x -> maintenance.
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.next]
+match = "next"
+prerelease = true
+prerelease_token = "rc"
+
+# Maintenance branches (1.x, 2.x, ...) cut stable patch/minor releases for an
+# older major after a new major has shipped from main.
+[tool.semantic_release.branches.maintenance]
+match = '^\d+\.x$'
+prerelease = false
+
+# Keep the changelog focused on user-facing changes. These patterns only filter
+# what's rendered — they do not affect version bumps.
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+    '^chore(?:\([^)]*\))?: ',
+    '^ci(?:\([^)]*\))?: ',
+    '^build(?:\([^)]*\))?: ',
+    '^style(?:\([^)]*\))?: ',
+    '^test(?:\([^)]*\))?: ',
+    '^Merge ',
+]
+
