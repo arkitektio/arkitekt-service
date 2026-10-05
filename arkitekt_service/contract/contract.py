@@ -36,6 +36,10 @@ class Contract:
     """This release's config, from a hub's facts."""
     upgrades: bool = False
     """Whether the release ships ``manage.py upgrade``."""
+    setup: tuple[tuple[str, ...], ...] = ()
+    """What else the service's database needs before the service starts on it, as ``manage.py``
+    commands run after the migrations, in order: ``(("ensureadmin",), ("ensurerepos",))``.
+    Each has to be safe to run again."""
 
 
 def load() -> Contract:

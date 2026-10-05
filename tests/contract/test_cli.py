@@ -131,3 +131,27 @@ def test_the_shared_blocks_are_written_from_the_same_facts() -> None:
         blocks.datalayer(facts, "media", "zarr")
     with pytest.raises(Refused, match="instance key"):
         blocks.instance(facts)
+
+
+def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Wait, migrate, then the service's own setup — and a step that fails is the answer."""
+    import dataclasses
+    import subprocess
+
+    from arkitekt_service.contract import contract as declared
+
+    from tests.contract import example
+
+    with_setup = dataclasses.replace(example.contract, setup=(("ensureadmin",), ("ensurerepos", "--quiet")))
+    monkeypatch.setattr(declared, "load", lambda: with_setup)
+    monkeypatch.setattr(cli, "load", lambda: with_setup)
+
+    ran: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "call", lambda argv: ran.append(argv[1:]) or 0)
+    assert cli.main(["migrate"]) == 0
+    assert ran == [["manage.py", "wait_for_database", "-s", "2"], ["manage.py", "migrate", "--noinput"], ["manage.py", "ensureadmin"], ["manage.py", "ensurerepos", "--quiet"]]
+
+    ran.clear()
+    monkeypatch.setattr(subprocess, "call", lambda argv: ran.append(argv[1:]) or (3 if "migrate" in argv else 0))
+    assert cli.main(["migrate"]) == 3
+    assert [step[1] for step in ran] == ["wait_for_database", "migrate"], "nothing runs after a failed migration"

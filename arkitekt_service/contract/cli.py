@@ -15,7 +15,12 @@
     Judges a config as it stands — the file the service would start on.
 
 ``migrate [--plan]``
-    The release's database migrations (``manage.py migrate``); ``--plan`` lists what would run.
+    Everything the service's database needs before the service starts on it: waits for the
+    database, applies the release's migrations (``manage.py migrate``), then runs what the
+    service declared as its setup (an admin account, seeded rows). An installer runs it once
+    per build, before the first start and before an update's — which is why a service's own
+    start does nothing but serve. ``--plan`` lists the migrations that would run, and runs
+    nothing.
 
 ``upgrade --from A --to B``
     What the release does to its data between two versions (``manage.py upgrade``), if it
@@ -30,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import tempfile
 import typing
@@ -127,6 +133,20 @@ def _manage(*arguments: str) -> int:
     os.execvp(sys.executable, [sys.executable, "manage.py", *arguments])
 
 
+def prepare(contract: Contract) -> int:
+    """Bring the database to this release: wait for it, migrate, then the service's setup.
+
+    Stops at the first step that fails, with that step's exit code.
+    """
+    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "2"), ("migrate", "--noinput"), *contract.setup]
+    for step in steps:
+        print(f"=> manage.py {' '.join(step)}", flush=True)
+        code = subprocess.call([sys.executable, "manage.py", *step])
+        if code != 0:
+            return code
+    return 0
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one verb; the exit code is its answer."""
     parser = argparse.ArgumentParser(prog="python -m arkitekt_service", description="What this service's image answers a hub's installer.")
@@ -159,7 +179,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             judge(contract, _document(path, "the config"))
         elif verb == "migrate":
             plan: bool = asked.plan  # pyright: ignore[reportAny]
-            return _manage("migrate", "--plan") if plan else _manage("migrate", "--noinput")
+            return _manage("migrate", "--plan") if plan else prepare(contract)
         elif verb == "upgrade":
             left: str = asked.left  # pyright: ignore[reportAny]
             reached: str = asked.reached  # pyright: ignore[reportAny]
