@@ -215,7 +215,7 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pyt
     assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
     assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "run", "ensureadmin"], "summary": "Create the operator account", "includes": []}
     # `plan` is every service's; `upgrade` is only there for a release that ships one.
-    assert set(said["jobs"]) == {"migrate", "plan", "ensureadmin", "ensurerepos", "reindex"}
+    assert set(said["jobs"]) == {"migrate", "plan", "superuser", "ensureadmin", "ensurerepos", "reindex"}
     assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "run", "plan"]
     assert said["render"] == ["arkitekt-service", "render"]
 
@@ -244,10 +244,12 @@ def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pyt
     assert cli.main(["run", "ensurerepos"]) == 0
     assert cli.main(["run", "reindex", "--since", "2026-01-01"]) == 0
     assert cli.main(["run", "plan"]) == 0
-    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"], ["migrate", "--plan"]]
+    # The account's name and password come from the environment, never from here.
+    assert cli.main(["run", "superuser"]) == 0
+    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"], ["migrate", "--plan"], ["createsuperuser", "--noinput"]]
 
     assert cli.main(["run", "nope"]) == cli.REFUSED
-    assert "migrate, plan, ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
+    assert "migrate, plan, superuser, ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
     # An upgrade is only a job of a release that ships one.
     assert cli.main(["run", "upgrade", "--from", "1", "--to", "2"]) == cli.REFUSED
 
@@ -261,7 +263,7 @@ def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
 
     with pytest.raises(ValueError, match="ensureadmin"):
         dataclasses.replace(example.contract, setup=("ensureadmin",))
-    for reserved in ("migrate", "plan", "upgrade"):
+    for reserved in ("migrate", "plan", "upgrade", "superuser"):
         with pytest.raises(ValueError, match=reserved):
             dataclasses.replace(example.contract, jobs={reserved: Job((reserved,))})
 

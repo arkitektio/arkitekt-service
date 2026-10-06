@@ -32,8 +32,12 @@ MIGRATE = "migrate"
 PLAN = "plan"
 #: What a release does to its data between two versions, for a service that ships it.
 UPGRADE = "upgrade"
+#: An account that may sign in to the service's admin, made from the environment
+#: (``DJANGO_SUPERUSER_USERNAME``, ``_PASSWORD``, ``_EMAIL``): never from the command line,
+#: where a password is visible to every process on the machine.
+SUPERUSER = "superuser"
 #: The jobs that are every service's own, and so cannot be declared by one.
-RESERVED = (MIGRATE, PLAN, UPGRADE)
+RESERVED = (MIGRATE, PLAN, UPGRADE, SUPERUSER)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -113,6 +117,10 @@ class Contract:
                 includes=list(self.setup),
             ),
             PLAN: described.Job(command=[*runner, "run", PLAN], summary="List the migrations `migrate` would apply, and apply nothing."),
+            SUPERUSER: described.Job(
+                command=[*runner, "run", SUPERUSER],
+                summary="Create an account for the service's admin, from DJANGO_SUPERUSER_USERNAME, _PASSWORD and _EMAIL.",
+            ),
             **{name: described.Job(command=[*runner, "run", name], summary=job.summary) for name, job in self.jobs.items()},
         }
         if self.upgrades:

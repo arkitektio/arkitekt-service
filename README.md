@@ -26,7 +26,7 @@ arkitekt-service                      # what it is, needs and offers, and what t
 arkitekt-service serve                # become the service: serve, and nothing else
 arkitekt-service debug                # the same, with the development server
 arkitekt-service run migrate          # bring its database to this release, then its setup
-arkitekt-service run <job>            # any other job it offers: plan, upgrade, its own
+arkitekt-service run <job>            # any other job it offers: plan, superuser, upgrade, its own
 arkitekt-service standalone           # run migrate, then serve: one image, run on its own
 arkitekt-service render               # this release's config, from the hub's facts
 arkitekt-service check                # does this release read a config as written?
