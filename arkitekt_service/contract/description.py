@@ -77,6 +77,10 @@ class Description(Said):
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
     offers: Offers = Field(default_factory=Offers)
+    render: list[str] = Field(
+        default_factory=lambda: ["arkitekt-service", "render"],
+        description="What writes this release's config: run in the image with the hub's facts at `/hub/facts.yaml` (and what the operator set at `/hub/overrides.yaml`), it prints the config, or exits 78 with its reason.",
+    )
     serve: list[str] = Field(
         default_factory=lambda: ["bash", "run.sh"],
         description="What a container of the image runs to serve, and nothing else: an installer writes this as the service's command. Also the image's own `CMD`.",

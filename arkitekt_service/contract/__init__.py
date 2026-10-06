@@ -3,7 +3,7 @@
 A hub is a set of service images run together by an installer. The installer knows the hub —
 where the database is, which other services run, which keys they trust — and should know
 nothing about a service beyond what the service's own image tells it. This package is how an
-image tells it: one entry point (``python -m arkitekt_service <verb>``), the same in every image.
+image tells it: one entry point (``arkitekt-service <verb>``), the same in every image.
 
 ==============  ================================================================
 ``describe``    what the service needs from a hub and offers to it

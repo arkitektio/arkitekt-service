@@ -1,8 +1,10 @@
-"""The verbs an installer runs in a service's image: ``python -m arkitekt_service <verb>``.
+"""The verbs an installer runs in a service's image: ``arkitekt-service <verb>``.
 
 ``describe``
     Prints the service's :class:`~arkitekt_service.contract.description.Description` as JSON. Needs no
-    config. An image that cannot answer this has no contract, and an installer treats it as it
+    config. It is the image's own command: an installer asks by running the image with none, and
+    knows nothing else of what is inside. Whoever starts the image by hand gets the same, with a
+    note on stderr saying what to run instead. An image that cannot answer this has no contract, and an installer treats it as it
     treated images before there was one.
 
 ``render [--facts FILE] [--overrides FILE]``
@@ -41,6 +43,7 @@ from __future__ import annotations
 import argparse
 import os
 import runpy
+import shlex
 import sys
 import tempfile
 import typing
@@ -51,6 +54,7 @@ import yaml
 from pydantic import ValidationError
 
 from arkitekt_service.contract.contract import Contract, Refused, load
+from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
 from arkitekt_service.contract.merge import merge
@@ -186,9 +190,38 @@ def job(contract: Contract, name: str, extra: Sequence[str]) -> int:
     return manage(*declared.manage, *extra)
 
 
+def notice(said: Description) -> None:
+    """Say, beside the description, what it is for and what to run instead.
+
+    ``describe`` is the image's own command, so it is what somebody who simply starts the image
+    gets: a page of JSON, and a container that stops. This goes to stderr — an installer reads
+    stdout, and reads nothing but the description there — and says what they wanted to run.
+    """
+    prepare = said.jobs.get(said.prepare) if said.prepare else None
+    lines = [
+        "",
+        f"This is the {said.name} service of an Arkitekt hub. Started with no command, its image only",
+        "describes itself (above) and stops: that is how an installer such as konstruktor asks",
+        "what it is, before it writes anything. Nothing is being served.",
+        "",
+        "To run it yourself, name what you want:",
+        "",
+    ]
+    if prepare is not None:
+        lines.append(f"  {shlex.join(prepare.command):<44}  prepare its database (once per release)")
+    lines.append(f"  {shlex.join(said.serve):<44}  serve")
+    lines.append(f"  {shlex.join(said.debug):<44}  serve, for development")
+    others = {name: job for name, job in said.jobs.items() if name != said.prepare}
+    if others:
+        lines += ["", "What else can be run in it:", ""]
+        lines += [f"  {shlex.join(job.command):<44}  {job.summary}".rstrip() for job in others.values()]
+    lines += ["", "Each needs the service's config at /workspace/config.yaml, which an installer writes too.", ""]
+    print("\n".join(lines), file=sys.stderr)
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one verb; the exit code is its answer."""
-    parser = argparse.ArgumentParser(prog="python -m arkitekt_service", description="What this service's image answers a hub's installer.")
+    parser = argparse.ArgumentParser(prog="arkitekt-service", description="What this service's image answers a hub's installer.")
     verbs = parser.add_subparsers(dest="verb", required=True)
     verbs.add_parser("describe", help="What the service needs from a hub and offers to it, as JSON.")
     rendering = verbs.add_parser("render", help="This release's config, from a hub's facts.")
@@ -210,7 +243,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
     verb: str = asked.verb  # pyright: ignore[reportAny]  argparse's namespace
     try:
         if verb == "describe":
-            print(contract.said().model_dump_json(indent=2))
+            said = contract.said()
+            print(said.model_dump_json(indent=2))
+            notice(said)
         elif verb == "render":
             facts: Path = asked.facts  # pyright: ignore[reportAny]
             overrides: Path = asked.overrides  # pyright: ignore[reportAny]

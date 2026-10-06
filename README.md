@@ -22,11 +22,11 @@ pip install arkitekt-service
 Every service image answers the same entry point:
 
 ```
-python -m arkitekt_service describe    # what it needs from a hub and offers to it (JSON)
-python -m arkitekt_service render      # this release's config, from the hub's facts
-python -m arkitekt_service check       # does this release read a config as written?
-python -m arkitekt_service migrate     # its database migrations, as a step
-python -m arkitekt_service upgrade --from 5.2.0 --to 6.0.0
+arkitekt-service describe    # what it needs from a hub and offers to it (JSON)
+arkitekt-service render      # this release's config, from the hub's facts
+arkitekt-service check       # does this release read a config as written?
+arkitekt-service migrate     # its database migrations, as a step
+arkitekt-service upgrade --from 5.2.0 --to 6.0.0
 ```
 
 An installer (Konstruktor) then needs to know the hub, and nothing about a service that the
@@ -44,7 +44,7 @@ account, seeded rows), all in one process. Whoever starts the service runs it as
 own, once per build, before the first start and before an update's:
 
 ```
-docker compose run --rm --no-deps mikro python -m arkitekt_service migrate
+docker compose run --rm --no-deps mikro arkitekt-service migrate
 ```
 
 or, in a compose file that has no installer, as a service the server waits for:
@@ -52,7 +52,7 @@ or, in a compose file that has no installer, as a service the server waits for:
 ```yaml
 mikro-migrate:
   image: jhnnsrs/mikro:7
-  command: python -m arkitekt_service migrate
+  command: arkitekt-service migrate
 mikro:
   image: jhnnsrs/mikro:7
   depends_on:
@@ -70,15 +70,27 @@ What `describe` prints also says how the image is run, so an installer assumes n
   runs it. A service declares its own (`Job(("ensureadmin",), "Create the operator account")`
   on its contract); `migrate` is every service's, and lists the ones it runs as its setup
   (`includes`). An operator runs any of them again by name, e.g. `konstruktor job run mikro
-  ensureadmin`, which is `python -m arkitekt_service job ensureadmin` in a container of the image.
+  ensureadmin`, which is `arkitekt-service job ensureadmin` in a container of the image.
 - `prepare`: which job brings the database to the release (`migrate`), or `null` for a
   service with nothing to prepare.
 - `sidecars`: what the service does not run without and ships as an image of its own
   (rekuest's takt), named from the service's image.
 - `serve` and `debug`: what a container of the image runs to serve, in production and in
   development (`bash run.sh`, `bash run-debug.sh` unless the service says otherwise). An
-  installer writes the one that applies as the service's command; the image's own `CMD` is
-  the same as `serve`, for whoever runs it without one.
+  installer writes the one that applies as the service's command.
+- `render`: what writes the release's config from the hub's facts.
+
+The image's own command is `describe`:
+
+```dockerfile
+CMD ["arkitekt-service", "describe"]
+```
+
+So an installer asks by running the image with no command, and assumes nothing of what is
+inside: every other command it runs is one the answer named. A service written in another
+language takes part by printing the same description as its own command. Whoever starts the
+image by hand gets the description too, and beside it, on stderr, a note saying that nothing
+is being served and what to run instead.
 
 A service declares itself in one module, named by `ARKITEKT_SERVICE` in its Dockerfile:
 

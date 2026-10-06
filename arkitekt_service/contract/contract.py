@@ -26,15 +26,21 @@ class Refused(Exception):
     """
 
 
-#: The job every service has: its database brought to the release (``python -m arkitekt_service migrate``).
+#: The job every service has: its database brought to the release (``arkitekt-service migrate``).
 MIGRATE = "migrate"
+#: What that job would apply, listed and not applied (``migrate --plan``).
+PLAN = "plan"
+#: What a release does to its data between two versions, for a service that ships it.
+UPGRADE = "upgrade"
+#: The jobs that are every service's own, and so cannot be declared by one.
+RESERVED = (MIGRATE, PLAN, UPGRADE)
 
 
 @dataclasses.dataclass(frozen=True)
 class Job:
     """One of the service's ``manage.py`` commands, offered by name.
 
-    An installer runs it in a container of its own (``python -m arkitekt_service job <name>``),
+    An installer runs it in a container of its own (``arkitekt-service job <name>``),
     and so can an operator; the ones named in :attr:`Contract.setup` are also run as part of
     ``migrate``, in its process. It has to be safe to run again.
     """
@@ -65,8 +71,9 @@ class Contract:
 
     def __post_init__(self) -> None:
         """A setup that names a job nobody declared is refused where it is written."""
-        if MIGRATE in self.jobs:
-            raise ValueError(f"`{MIGRATE}` is every service's own job: it cannot be declared again")
+        taken = [name for name in RESERVED if name in self.jobs]
+        if taken:
+            raise ValueError(f"{', '.join(taken)} is every service's own job: it cannot be declared again")
         unknown = [name for name in self.setup if name not in self.jobs]
         if unknown:
             raise ValueError(f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job")
@@ -78,15 +85,18 @@ class Contract:
         each as the command that runs it, with ``migrate`` — which runs the setup among them —
         as the one that prepares the service.
         """
-        runner = ["python", "-m", "arkitekt_service"]
+        runner = ["arkitekt-service"]
         jobs = {
             MIGRATE: described.Job(
                 command=[*runner, MIGRATE],
                 summary="Wait for the database, apply this release's migrations, then run the service's setup.",
                 includes=list(self.setup),
             ),
+            PLAN: described.Job(command=[*runner, MIGRATE, "--plan"], summary="List the migrations `migrate` would apply, and apply nothing."),
             **{name: described.Job(command=[*runner, "job", name], summary=job.summary) for name, job in self.jobs.items()},
         }
+        if self.upgrades:
+            jobs[UPGRADE] = described.Job(command=[*runner, UPGRADE], summary="What this release does to its data between two versions: `--from A --to B`.")
         return self.description.model_copy(update={"jobs": jobs, "prepare": MIGRATE})
 
 

@@ -39,7 +39,7 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert said["identifier"] == "live.arkitekt.example"
     # What to run to prepare it is the image's to say.
     assert said["prepare"] == "migrate"
-    assert said["jobs"]["migrate"]["command"] == ["python", "-m", "arkitekt_service", "migrate"]
+    assert said["jobs"]["migrate"]["command"] == ["arkitekt-service", "migrate"]
     # How it is started is the image's to say too, for both of the ways it is run.
     assert said["serve"] == ["bash", "run.sh"] and said["debug"] == ["bash", "run-debug.sh"]
     assert said["sidecars"] == []
@@ -217,8 +217,26 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pyt
     said = json.loads(capsys.readouterr().out)
     assert said["prepare"] == "migrate"
     assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
-    assert said["jobs"]["ensureadmin"] == {"command": ["python", "-m", "arkitekt_service", "job", "ensureadmin"], "summary": "Create the operator account", "includes": []}
-    assert set(said["jobs"]) == {"migrate", "ensureadmin", "ensurerepos", "reindex"}
+    assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "job", "ensureadmin"], "summary": "Create the operator account", "includes": []}
+    # `plan` is every service's; `upgrade` is only there for a release that ships one.
+    assert set(said["jobs"]) == {"migrate", "plan", "ensureadmin", "ensurerepos", "reindex"}
+    assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "migrate", "--plan"]
+    assert said["render"] == ["arkitekt-service", "render"]
+
+
+def test_whoever_starts_the_image_by_hand_is_told_what_to_run_instead(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`describe` is the image's own command. An installer reads stdout, which stays the
+    description and nothing else; a person reads the note beside it."""
+    _with_jobs(monkeypatch)
+    assert cli.main(["describe"]) == 0
+
+    printed = capsys.readouterr()
+    assert json.loads(printed.out)["name"] == "example"
+    note = printed.err
+    assert "an installer such as konstruktor" in note and "Nothing is being served" in note
+    assert "arkitekt-service migrate" in note and "prepare its database" in note
+    assert "bash run.sh" in note and "bash run-debug.sh" in note
+    assert "arkitekt-service job ensureadmin" in note and "Create the operator account" in note
 
 
 def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -243,5 +261,16 @@ def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
 
     with pytest.raises(ValueError, match="ensureadmin"):
         dataclasses.replace(example.contract, setup=("ensureadmin",))
-    with pytest.raises(ValueError, match="migrate"):
-        dataclasses.replace(example.contract, jobs={"migrate": Job(("migrate",))})
+    for reserved in ("migrate", "plan", "upgrade"):
+        with pytest.raises(ValueError, match=reserved):
+            dataclasses.replace(example.contract, jobs={reserved: Job((reserved,))})
+
+
+def test_a_release_that_ships_an_upgrade_offers_it_as_a_job() -> None:
+    import dataclasses
+
+    from tests.contract import example
+
+    assert "upgrade" not in example.contract.said().jobs
+    shipped = dataclasses.replace(example.contract, upgrades=True).said()
+    assert shipped.jobs["upgrade"].command == ["arkitekt-service", "upgrade"]

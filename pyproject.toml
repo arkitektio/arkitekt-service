@@ -15,6 +15,10 @@ dependencies = [
     "pyyaml>=6",
 ]
 
+# What an image answers a hub's installer with: `arkitekt-service <verb>`.
+[project.scripts]
+arkitekt-service = "arkitekt_service.contract.cli:main"
+
 [project.optional-dependencies]
 # Forwarding the provenance token of the request a signal is emitted in reads koherent's
 # context variable; without koherent, signals simply carry no token.

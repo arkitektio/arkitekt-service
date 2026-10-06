@@ -1,4 +1,4 @@
-"""``python -m arkitekt_service <verb>``: what this image answers a hub's installer."""
+"""``python -m arkitekt_service <verb>``: the same as the ``arkitekt-service`` command, for where there is none."""
 
 import sys
 
