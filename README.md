@@ -63,6 +63,16 @@ mikro:
 A container that merely restarts then does none of it. No `run.sh` migrates, seeds or waits
 for a database, and neither does a development one.
 
+What `describe` prints also says how the image is run, so an installer assumes none of it:
+
+- `identifier`: what the service is registered as, and what a client asks for.
+- `jobs.migrate`: the command of the job above, or `null` for a service with nothing to
+  prepare.
+- `sidecars`: what the service does not run without and ships as an image of its own
+  (rekuest's takt), named from the service's image.
+- How it serves is not in there: that is the image's own `CMD`, which an installer leaves
+  alone.
+
 A service declares itself in one module, named by `ARKITEKT_SERVICE` in its Dockerfile:
 
 ```python
@@ -76,7 +86,7 @@ def render(facts: Facts) -> dict[str, JSON]:
 
 
 contract = Contract(
-    description=Description(name="mikro", needs=Needs(storage=["media", "zarr"])),
+    description=Description(name="mikro", identifier="live.arkitekt.mikro", needs=Needs(storage=["media", "zarr"])),
     settings=Settings,
     render=render,
 )

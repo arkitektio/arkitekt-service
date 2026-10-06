@@ -64,6 +64,7 @@ def render(facts: Facts) -> dict[str, JSON]:
 contract = Contract(
     description=Description(
         name="example",
+        identifier="live.arkitekt.example",
         needs=Needs(storage=["media"], instance_key=True, peers=["rekuest"]),
         offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
         requires={"rekuest": ">=6"},

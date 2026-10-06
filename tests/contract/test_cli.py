@@ -35,7 +35,11 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert cli.main(["describe"]) == 0
 
     said = json.loads(capsys.readouterr().out)
-    assert said["contract"] == 1 and said["name"] == "example"
+    assert said["contract"] == 2 and said["name"] == "example"
+    assert said["identifier"] == "live.arkitekt.example"
+    # What to run to prepare it is the image's to say; its start is the image's own command.
+    assert said["jobs"] == {"migrate": ["python", "-m", "arkitekt_service", "migrate"]}
+    assert said["sidecars"] == []
     assert said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
     assert said["offers"]["endpoints"] == {"rekuest_hook": "_rekuest/hook"}
     assert said["requires"] == {"rekuest": ">=6"} and said["upgrade_from"] == "1.0.0"
@@ -179,3 +183,18 @@ def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatc
         f"{here} ['fails']",
         f"{here} ['third']",
     ]
+
+
+def test_a_service_says_what_it_does_not_run_without_and_what_needs_no_preparing() -> None:
+    """A sidecar's image is named from the service's own; a service with no database has no job."""
+    from arkitekt_service.contract import Description, Jobs, Sidecar
+
+    said = Description(
+        name="pair",
+        identifier="live.arkitekt.pair",
+        jobs=Jobs(migrate=None),
+        sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")],
+    ).model_dump(mode="json")
+
+    assert said["jobs"] == {"migrate": None}
+    assert said["sidecars"] == [{"name": "takt", "image": "{repository}-takt:{tag}", "summary": ""}]

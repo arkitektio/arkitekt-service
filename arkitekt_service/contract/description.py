@@ -1,4 +1,5 @@
-"""What a service tells a hub about itself: what it needs, what it offers, what it runs beside.
+"""What a service tells a hub about itself: what it needs, what it offers, what it runs beside,
+and what to run to prepare it.
 
 Printed by ``describe``, before the service has any config. An installer reads it instead of
 knowing the service: which buckets to make, whether to mint it a key, what to tell the
@@ -46,13 +47,41 @@ class Offers(Said):
     endpoints: dict[str, str] = Field(default_factory=dict, description="Endpoints other services are wired to, by kind, as paths under the service's own (rekuest_service: _rekuest/service).")
 
 
+def _migrate() -> list[str]:
+    return ["python", "-m", "arkitekt_service", "migrate"]
+
+
+class Jobs(Said):
+    """What an installer runs in the service's image, as jobs of their own, beside its start.
+
+    The start itself is the image's own command (its ``CMD``): a container of the image
+    serves, and does nothing else.
+    """
+
+    migrate: list[str] | None = Field(
+        default_factory=_migrate,
+        description="The command that brings the service's database to this release: once per build, before the first start and before an update's. Null when there is nothing to prepare.",
+    )
+
+
+class Sidecar(Said):
+    """A process the service does not run without, released with it as an image of its own."""
+
+    name: str = Field(description="What a hub calls it beside the service: `takt` runs as `<service>-takt`.")
+    image: str = Field(description="Its image, from the service's own: `{repository}` and `{tag}` stand for the parts of the image this description came from (`{repository}-takt:{tag}`).")
+    summary: str = ""
+
+
 class Description(Said):
     """A service, as its image describes it."""
 
-    contract: Literal[1] = Field(default=1, description="The version of this contract.")
+    contract: Literal[2] = Field(default=2, description="The version of this contract.")
     name: str = Field(description="The service's name: what a hub calls it by default.")
+    identifier: str = Field(description="What the service is registered as at the coordination server, and what a client asks for: `live.arkitekt.mikro`.")
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
     offers: Offers = Field(default_factory=Offers)
+    jobs: Jobs = Field(default_factory=Jobs)
+    sidecars: list[Sidecar] = Field(default_factory=list)
     requires: dict[str, str] = Field(default_factory=dict, description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').")
     upgrade_from: str | None = Field(default=None, description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.")
