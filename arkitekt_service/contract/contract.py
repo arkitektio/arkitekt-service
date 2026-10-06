@@ -5,10 +5,11 @@ from __future__ import annotations
 import dataclasses
 import importlib
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from pydantic_settings import BaseSettings
 
+from arkitekt_service.contract import description as described
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
@@ -25,6 +26,25 @@ class Refused(Exception):
     """
 
 
+#: The job every service has: its database brought to the release (``python -m arkitekt_service migrate``).
+MIGRATE = "migrate"
+
+
+@dataclasses.dataclass(frozen=True)
+class Job:
+    """One of the service's ``manage.py`` commands, offered by name.
+
+    An installer runs it in a container of its own (``python -m arkitekt_service job <name>``),
+    and so can an operator; the ones named in :attr:`Contract.setup` are also run as part of
+    ``migrate``, in its process. It has to be safe to run again.
+    """
+
+    manage: tuple[str, ...]
+    """The ``manage.py`` command and its arguments: ``("ensureadmin",)``."""
+    summary: str = ""
+    """What it does, in a line an operator reads."""
+
+
 @dataclasses.dataclass(frozen=True)
 class Contract:
     """One service, as its image declares it."""
@@ -36,10 +56,38 @@ class Contract:
     """This release's config, from a hub's facts."""
     upgrades: bool = False
     """Whether the release ships ``manage.py upgrade``."""
-    setup: tuple[tuple[str, ...], ...] = ()
-    """What else the service's database needs before the service starts on it, as ``manage.py``
-    commands run after the migrations, in order: ``(("ensureadmin",), ("ensurerepos",))``.
-    Each has to be safe to run again."""
+    jobs: Mapping[str, Job] = dataclasses.field(default_factory=lambda: dict[str, Job]())
+    """What can be run in the image beside its start, by name: ``{"ensureadmin": Job(("ensureadmin",),
+    "Create the operator account")}``."""
+    setup: tuple[str, ...] = ()
+    """What else the service's database needs before the service starts on it: the names of
+    the :attr:`jobs` that ``migrate`` runs after the migrations, in order."""
+
+    def __post_init__(self) -> None:
+        """A setup that names a job nobody declared is refused where it is written."""
+        if MIGRATE in self.jobs:
+            raise ValueError(f"`{MIGRATE}` is every service's own job: it cannot be declared again")
+        unknown = [name for name in self.setup if name not in self.jobs]
+        if unknown:
+            raise ValueError(f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job")
+
+    def said(self) -> Description:
+        """The description an installer reads: the service's own, with what can be run in its image.
+
+        The jobs are not written into the description by hand: they are the ones declared here,
+        each as the command that runs it, with ``migrate`` — which runs the setup among them —
+        as the one that prepares the service.
+        """
+        runner = ["python", "-m", "arkitekt_service"]
+        jobs = {
+            MIGRATE: described.Job(
+                command=[*runner, MIGRATE],
+                summary="Wait for the database, apply this release's migrations, then run the service's setup.",
+                includes=list(self.setup),
+            ),
+            **{name: described.Job(command=[*runner, "job", name], summary=job.summary) for name, job in self.jobs.items()},
+        }
+        return self.description.model_copy(update={"jobs": jobs, "prepare": MIGRATE})
 
 
 def load() -> Contract:

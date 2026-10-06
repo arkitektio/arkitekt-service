@@ -66,8 +66,13 @@ for a database, and neither does a development one.
 What `describe` prints also says how the image is run, so an installer assumes none of it:
 
 - `identifier`: what the service is registered as, and what a client asks for.
-- `jobs.migrate`: the command of the job above, or `null` for a service with nothing to
-  prepare.
+- `jobs`: what can be run in the image beside its start, by name, each with the command that
+  runs it. A service declares its own (`Job(("ensureadmin",), "Create the operator account")`
+  on its contract); `migrate` is every service's, and lists the ones it runs as its setup
+  (`includes`). An operator runs any of them again by name, e.g. `konstruktor job run mikro
+  ensureadmin`, which is `python -m arkitekt_service job ensureadmin` in a container of the image.
+- `prepare`: which job brings the database to the release (`migrate`), or `null` for a
+  service with nothing to prepare.
 - `sidecars`: what the service does not run without and ships as an image of its own
   (rekuest's takt), named from the service's image.
 - How it serves is not in there: that is the image's own `CMD`, which an installer leaves

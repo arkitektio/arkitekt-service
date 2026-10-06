@@ -14,10 +14,15 @@
 ``check [--config FILE]``
     Judges a config as it stands — the file the service would start on.
 
+``job NAME [ARGS...]``
+    Runs one of the jobs the service declares (``describe`` lists them): a ``manage.py`` command
+    by the name the service gave it. An installer runs these for an operator who asks for one
+    again; the ones a service names as its setup also run as part of ``migrate``.
+
 ``migrate [--plan]``
     Everything the service's database needs before the service starts on it: waits for the
-    database, applies the release's migrations (``manage.py migrate``), then runs what the
-    service declared as its setup (an admin account, seeded rows). An installer runs it once
+    database, applies the release's migrations (``manage.py migrate``), then runs the jobs the
+    service named as its setup (an admin account, seeded rows), all in one process. An installer runs it once
     per build, before the first start and before an update's — which is why a service's own
     start does nothing but serve. ``--plan`` lists the migrations that would run, and runs
     nothing.
@@ -163,13 +168,22 @@ def prepare(contract: Contract) -> int:
     none of it. It waits until the database takes a connection and no longer. Stops at the
     first step that fails, with that step's exit code.
     """
-    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "0"), ("migrate", "--noinput"), *contract.setup]
+    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "0"), ("migrate", "--noinput"), *(contract.jobs[name].manage for name in contract.setup)]
     for step in steps:
         print(f"=> manage.py {' '.join(step)}", flush=True)
         code = manage(*step)
         if code != 0:
             return code
     return 0
+
+
+def job(contract: Contract, name: str, extra: Sequence[str]) -> int:
+    """Run one of the service's declared jobs, with whatever was passed after its name."""
+    declared = contract.jobs.get(name)
+    if declared is None:
+        offered = ", ".join(sorted(contract.jobs)) or "none"
+        raise No(f"there is no job `{name}`", [f"this release offers: {offered}"])
+    return manage(*declared.manage, *extra)
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
@@ -184,6 +198,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
     checking.add_argument("--config", type=Path, default=None)
     migrating = verbs.add_parser("migrate", help="The release's database migrations.")
     migrating.add_argument("--plan", action="store_true", help="List what would run, and run nothing.")
+    running = verbs.add_parser("job", help="One of the jobs the service declares, by name.")
+    running.add_argument("name")
+    running.add_argument("extra", nargs=argparse.REMAINDER, help="Passed on to the job.")
     upgrading = verbs.add_parser("upgrade", help="What the release does to its data between two versions.")
     upgrading.add_argument("--from", dest="left", required=True)
     upgrading.add_argument("--to", dest="reached", required=True)
@@ -193,7 +210,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     verb: str = asked.verb  # pyright: ignore[reportAny]  argparse's namespace
     try:
         if verb == "describe":
-            print(contract.description.model_dump_json(indent=2))
+            print(contract.said().model_dump_json(indent=2))
         elif verb == "render":
             facts: Path = asked.facts  # pyright: ignore[reportAny]
             overrides: Path = asked.overrides  # pyright: ignore[reportAny]
@@ -205,6 +222,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
         elif verb == "migrate":
             plan: bool = asked.plan  # pyright: ignore[reportAny]
             return _manage("migrate", "--plan") if plan else prepare(contract)
+        elif verb == "job":
+            name: str = asked.name  # pyright: ignore[reportAny]
+            extra: list[str] = asked.extra  # pyright: ignore[reportAny]
+            return job(contract, name, extra)
         elif verb == "upgrade":
             left: str = asked.left  # pyright: ignore[reportAny]
             reached: str = asked.reached  # pyright: ignore[reportAny]

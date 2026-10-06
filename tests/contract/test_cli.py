@@ -38,7 +38,8 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert said["contract"] == 2 and said["name"] == "example"
     assert said["identifier"] == "live.arkitekt.example"
     # What to run to prepare it is the image's to say; its start is the image's own command.
-    assert said["jobs"] == {"migrate": ["python", "-m", "arkitekt_service", "migrate"]}
+    assert said["prepare"] == "migrate"
+    assert said["jobs"]["migrate"]["command"] == ["python", "-m", "arkitekt_service", "migrate"]
     assert said["sidecars"] == []
     assert said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
     assert said["offers"]["endpoints"] == {"rekuest_hook": "_rekuest/hook"}
@@ -139,21 +140,14 @@ def test_the_shared_blocks_are_written_from_the_same_facts() -> None:
 
 
 def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Wait, migrate, then the service's own setup — and a step that fails is the answer."""
-    import dataclasses
-
-    from arkitekt_service.contract import contract as declared
-
-    from tests.contract import example
-
-    with_setup = dataclasses.replace(example.contract, setup=(("ensureadmin",), ("ensurerepos", "--quiet")))
-    monkeypatch.setattr(declared, "load", lambda: with_setup)
-    monkeypatch.setattr(cli, "load", lambda: with_setup)
+    """Wait, migrate, then the jobs the service named as its setup — and a step that fails is the answer."""
+    _with_jobs(monkeypatch)
 
     ran: list[list[str]] = []
     monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
     assert cli.main(["migrate"]) == 0
-    # It waits for a connection and no longer: nothing here is worth a fixed delay.
+    # It waits for a connection and no longer: nothing here is worth a fixed delay. A job
+    # that is not part of the setup (`reindex`) is not run.
     assert ran == [["wait_for_database", "-s", "0"], ["migrate", "--noinput"], ["ensureadmin"], ["ensurerepos", "--quiet"]]
 
     ran.clear()
@@ -185,16 +179,67 @@ def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatc
     ]
 
 
-def test_a_service_says_what_it_does_not_run_without_and_what_needs_no_preparing() -> None:
-    """A sidecar's image is named from the service's own; a service with no database has no job."""
-    from arkitekt_service.contract import Description, Jobs, Sidecar
+def test_a_sidecars_image_is_named_from_the_services_own() -> None:
+    from arkitekt_service.contract import Description, Sidecar
 
-    said = Description(
-        name="pair",
-        identifier="live.arkitekt.pair",
-        jobs=Jobs(migrate=None),
-        sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")],
-    ).model_dump(mode="json")
+    said = Description(name="pair", identifier="live.arkitekt.pair", sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")]).model_dump(mode="json")
 
-    assert said["jobs"] == {"migrate": None}
     assert said["sidecars"] == [{"name": "takt", "image": "{repository}-takt:{tag}", "summary": ""}]
+    # Written by hand, a description names no job: they are the contract's to say.
+    assert said["jobs"] == {} and said["prepare"] is None
+
+
+def _with_jobs(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
+    import dataclasses
+
+    from arkitekt_service.contract import Job
+    from arkitekt_service.contract import contract as declared
+
+    from tests.contract import example
+
+    with_jobs = dataclasses.replace(
+        example.contract,
+        jobs={"ensureadmin": Job(("ensureadmin",), "Create the operator account"), "ensurerepos": Job(("ensurerepos", "--quiet"), "Clone the repositories"), "reindex": Job(("reindex",))},
+        setup=("ensureadmin", "ensurerepos"),
+    )
+    monkeypatch.setattr(declared, "load", lambda: with_jobs)
+    monkeypatch.setattr(cli, "load", lambda: with_jobs)
+    return with_jobs
+
+
+def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """Each job is the command that runs it; ``migrate`` says which it includes, and is the one that prepares."""
+    _with_jobs(monkeypatch)
+    assert cli.main(["describe"]) == 0
+
+    said = json.loads(capsys.readouterr().out)
+    assert said["prepare"] == "migrate"
+    assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
+    assert said["jobs"]["ensureadmin"] == {"command": ["python", "-m", "arkitekt_service", "job", "ensureadmin"], "summary": "Create the operator account", "includes": []}
+    assert set(said["jobs"]) == {"migrate", "ensureadmin", "ensurerepos", "reindex"}
+
+
+def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    _with_jobs(monkeypatch)
+    ran: list[list[str]] = []
+    monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
+
+    assert cli.main(["job", "ensurerepos"]) == 0
+    assert cli.main(["job", "reindex", "--since", "2026-01-01"]) == 0
+    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"]]
+
+    assert cli.main(["job", "nope"]) == cli.REFUSED
+    assert "ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
+
+
+def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
+    import dataclasses
+
+    from arkitekt_service.contract import Job
+
+    from tests.contract import example
+
+    with pytest.raises(ValueError, match="ensureadmin"):
+        dataclasses.replace(example.contract, setup=("ensureadmin",))
+    with pytest.raises(ValueError, match="migrate"):
+        dataclasses.replace(example.contract, jobs={"migrate": Job(("migrate",))})

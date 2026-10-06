@@ -47,21 +47,17 @@ class Offers(Said):
     endpoints: dict[str, str] = Field(default_factory=dict, description="Endpoints other services are wired to, by kind, as paths under the service's own (rekuest_service: _rekuest/service).")
 
 
-def _migrate() -> list[str]:
-    return ["python", "-m", "arkitekt_service", "migrate"]
+class Job(Said):
+    """Something an installer can run in the service's image, as a container of its own.
 
-
-class Jobs(Said):
-    """What an installer runs in the service's image, as jobs of their own, beside its start.
-
-    The start itself is the image's own command (its ``CMD``): a container of the image
-    serves, and does nothing else.
+    A job is named, so that the same thing is asked for the same way everywhere: by an
+    installer preparing a hub (``prepare``), and by an operator who wants one of them run
+    again (``konstruktor job run <service> <job>``).
     """
 
-    migrate: list[str] | None = Field(
-        default_factory=_migrate,
-        description="The command that brings the service's database to this release: once per build, before the first start and before an update's. Null when there is nothing to prepare.",
-    )
+    command: list[str] = Field(description="What to run, in a container of the image, with the service's config.")
+    summary: str = Field(default="", description="What it does, in a line an operator reads.")
+    includes: list[str] = Field(default_factory=list, description="Other jobs this one runs as part of itself, in order: `migrate` includes the service's setup.")
 
 
 class Sidecar(Said):
@@ -81,7 +77,14 @@ class Description(Said):
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
     offers: Offers = Field(default_factory=Offers)
-    jobs: Jobs = Field(default_factory=Jobs)
+    jobs: dict[str, Job] = Field(
+        default_factory=dict,
+        description="What can be run in the image beside its start, by name. The start itself is the image's own command (its `CMD`): a container of the image serves, and does nothing else.",
+    )
+    prepare: str | None = Field(
+        default=None,
+        description="The job that brings the service's database to this release: run once per build, before the first start and before an update's. Null when there is nothing to prepare.",
+    )
     sidecars: list[Sidecar] = Field(default_factory=list)
     requires: dict[str, str] = Field(default_factory=dict, description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').")
     upgrade_from: str | None = Field(default=None, description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.")
