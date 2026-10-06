@@ -61,11 +61,16 @@ class Job(Said):
 
 
 class Sidecar(Said):
-    """A process the service does not run without, released with it as an image of its own."""
+    """A process that runs beside the service, as an image of its own.
+
+    Either one the service does not run without (rekuest's takt), or one it drives when a hub
+    has the use for it (``optional``: Lok's mesh control server, on a hub with a mesh).
+    """
 
     name: str = Field(description="What a hub calls it beside the service: `takt` runs as `<service>-takt`.")
     image: str = Field(description="Its image, from the service's own: `{repository}` and `{tag}` stand for the parts of the image this description came from (`{repository}-takt:{tag}`).")
     summary: str = ""
+    optional: bool = Field(default=False, description="Whether the service runs without it: an installer starts an optional one only on a hub that asked for what it brings.")
 
 
 class Description(Said):

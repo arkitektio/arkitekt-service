@@ -182,7 +182,7 @@ def test_a_sidecars_image_is_named_from_the_services_own() -> None:
 
     said = Description(name="pair", identifier="live.arkitekt.pair", sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")]).model_dump(mode="json")
 
-    assert said["sidecars"] == [{"name": "takt", "image": "{repository}-takt:{tag}", "summary": ""}]
+    assert said["sidecars"] == [{"name": "takt", "image": "{repository}-takt:{tag}", "summary": "", "optional": False}]
     # Written by hand, a description names no job: they are the contract's to say.
     assert said["jobs"] == {} and said["prepare"] is None
 

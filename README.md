@@ -65,8 +65,9 @@ What the description says:
   ensureadmin`, which is `arkitekt-service run ensureadmin` in a container of the image.
 - `prepare`: which job brings the database to the release (`migrate`).
 - `render`: what writes the release's config from the hub's facts.
-- `sidecars`: what the service does not run without and ships as an image of its own
-  (rekuest's takt), named from the service's image.
+- `sidecars`: what runs beside the service as an image of its own: one it does not run
+  without (rekuest's takt, named from the service's image), or an `optional` one it drives
+  on a hub that has the use for it (Lok's mesh control server).
 
 ### A container serves; a job prepares
 
