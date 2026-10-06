@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
+import runpy
 import sys
 import tempfile
 import typing
@@ -133,15 +133,40 @@ def _manage(*arguments: str) -> int:
     os.execvp(sys.executable, [sys.executable, "manage.py", *arguments])
 
 
+def manage(*arguments: str) -> int:
+    """Run one of the service's ``manage.py`` commands in this process; its exit code.
+
+    In this process, because the steps of a preparation are one job: each would otherwise
+    start Python and load the whole service again before doing its own little.
+    """
+    before = sys.argv
+    sys.argv = ["manage.py", *arguments]
+    try:
+        runpy.run_path("manage.py", run_name="__main__")
+    except SystemExit as stopped:
+        code = stopped.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(code, file=sys.stderr)
+        return 1
+    finally:
+        sys.argv = before
+    return 0
+
+
 def prepare(contract: Contract) -> int:
     """Bring the database to this release: wait for it, migrate, then the service's setup.
 
-    Stops at the first step that fails, with that step's exit code.
+    One job, run by whoever starts the service, once per build: a service's own start does
+    none of it. It waits until the database takes a connection and no longer. Stops at the
+    first step that fails, with that step's exit code.
     """
-    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "2"), ("migrate", "--noinput"), *contract.setup]
+    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "0"), ("migrate", "--noinput"), *contract.setup]
     for step in steps:
         print(f"=> manage.py {' '.join(step)}", flush=True)
-        code = subprocess.call([sys.executable, "manage.py", *step])
+        code = manage(*step)
         if code != 0:
             return code
     return 0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -136,7 +137,6 @@ def test_the_shared_blocks_are_written_from_the_same_facts() -> None:
 def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Wait, migrate, then the service's own setup — and a step that fails is the answer."""
     import dataclasses
-    import subprocess
 
     from arkitekt_service.contract import contract as declared
 
@@ -147,11 +147,35 @@ def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(m
     monkeypatch.setattr(cli, "load", lambda: with_setup)
 
     ran: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "call", lambda argv: ran.append(argv[1:]) or 0)
+    monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
     assert cli.main(["migrate"]) == 0
-    assert ran == [["manage.py", "wait_for_database", "-s", "2"], ["manage.py", "migrate", "--noinput"], ["manage.py", "ensureadmin"], ["manage.py", "ensurerepos", "--quiet"]]
+    # It waits for a connection and no longer: nothing here is worth a fixed delay.
+    assert ran == [["wait_for_database", "-s", "0"], ["migrate", "--noinput"], ["ensureadmin"], ["ensurerepos", "--quiet"]]
 
     ran.clear()
-    monkeypatch.setattr(subprocess, "call", lambda argv: ran.append(argv[1:]) or (3 if "migrate" in argv else 0))
+    monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or (3 if "migrate" in step else 0))
     assert cli.main(["migrate"]) == 3
-    assert [step[1] for step in ran] == ["wait_for_database", "migrate"], "nothing runs after a failed migration"
+    assert [step[0] for step in ran] == ["wait_for_database", "migrate"], "nothing runs after a failed migration"
+
+
+def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each `manage.py` command runs in this interpreter, and its exit code comes back."""
+    (tmp_path / "manage.py").write_text(
+        "import os, sys\n"
+        "with open('ran', 'a') as log:\n"
+        "    log.write(f'{os.getpid()} {sys.argv[1:]}\\n')\n"
+        "if sys.argv[1] == 'fails':\n"
+        "    sys.exit(4)\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.manage("first", "--flag") == 0
+    assert cli.manage("fails") == 4
+    assert cli.manage("third") == 0
+
+    here = str(os.getpid())
+    assert (tmp_path / "ran").read_text().splitlines() == [
+        f"{here} ['first', '--flag']",
+        f"{here} ['fails']",
+        f"{here} ['third']",
+    ]

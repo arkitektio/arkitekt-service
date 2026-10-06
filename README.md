@@ -35,6 +35,34 @@ has to do to its data — all of that ships in the image, with the code it belon
 `78` is a release's own refusal (facts it cannot be configured from, a setting it does not
 read), with the reason on stderr.
 
+### A container serves; a job prepares
+
+A service's container does one thing: serve. Its start script starts the server and nothing
+else. Everything its database needs first is `migrate`: wait for the database, apply the
+release's migrations, then run the commands the service declared as its `setup` (an admin
+account, seeded rows), all in one process. Whoever starts the service runs it as a job of its
+own, once per build, before the first start and before an update's:
+
+```
+docker compose run --rm --no-deps mikro python -m arkitekt_service migrate
+```
+
+or, in a compose file that has no installer, as a service the server waits for:
+
+```yaml
+mikro-migrate:
+  image: jhnnsrs/mikro:7
+  command: python -m arkitekt_service migrate
+mikro:
+  image: jhnnsrs/mikro:7
+  depends_on:
+    mikro-migrate:
+      condition: service_completed_successfully
+```
+
+A container that merely restarts then does none of it. No `run.sh` migrates, seeds or waits
+for a database, and neither does a development one.
+
 A service declares itself in one module, named by `ARKITEKT_SERVICE` in its Dockerfile:
 
 ```python
