@@ -274,3 +274,27 @@ def test_a_release_that_ships_an_upgrade_offers_it_as_a_job() -> None:
     assert "upgrade" not in example.contract.said().jobs
     shipped = dataclasses.replace(example.contract, upgrades=True).said()
     assert shipped.jobs["upgrade"].command == ["arkitekt-service", "upgrade"]
+
+
+def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: Path) -> None:
+    """As it is run in an image: the installed command, in the service's own directory, which
+    is on nobody's path. `python -m` would find the service there by itself; a command has to
+    look."""
+    import shutil
+    import subprocess
+    import sys
+
+    command = shutil.which("arkitekt-service", path=str(Path(sys.executable).parent))
+    assert command, "the command is installed beside the interpreter"
+    (tmp_path / "somewhere_else.py").write_text(
+        "from pydantic_settings import BaseSettings\n"
+        "from arkitekt_service.contract import Contract, Description\n"
+        "class Settings(BaseSettings): ...\n"
+        "contract = Contract(description=Description(name='elsewhere', identifier='live.arkitekt.elsewhere'), settings=Settings, render=lambda facts: {})\n"
+    )
+    environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    ran = subprocess.run([command, "describe"], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+
+    assert ran.returncode == 0, ran.stderr
+    assert json.loads(ran.stdout)["name"] == "elsewhere"
+    assert "Nothing is being served" in ran.stderr

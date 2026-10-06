@@ -239,6 +239,11 @@ def main(arguments: Sequence[str] | None = None) -> int:
     upgrading.add_argument("--to", dest="reached", required=True)
     asked = parser.parse_args(arguments)
 
+    # The service is the code in the working directory: its contract's module and its
+    # `manage.py` are found from there. `python -m` looks there by itself; a command does not.
+    here = os.getcwd()
+    if here not in sys.path:
+        sys.path.insert(0, here)
     contract = load()
     verb: str = asked.verb  # pyright: ignore[reportAny]  argparse's namespace
     try:
