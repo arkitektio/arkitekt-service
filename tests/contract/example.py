@@ -7,7 +7,7 @@ import os
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Refused
+from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Refused, Start
 
 
 class Django(BaseModel):
@@ -72,4 +72,6 @@ contract = Contract(
     ),
     settings=Settings,
     render=render,
+    serve=Start(("daphne", "-b", "0.0.0.0", "-p", "80", "example.asgi:application")),
+    debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80"), {"EXAMPLE_DEBUG": "1"}),
 )

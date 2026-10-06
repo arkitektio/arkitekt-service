@@ -26,9 +26,9 @@ class Refused(Exception):
     """
 
 
-#: The job every service has: its database brought to the release (``arkitekt-service migrate``).
+#: The job every service has: its database brought to the release (``arkitekt-service run migrate``).
 MIGRATE = "migrate"
-#: What that job would apply, listed and not applied (``migrate --plan``).
+#: What that job would apply, listed and not applied.
 PLAN = "plan"
 #: What a release does to its data between two versions, for a service that ships it.
 UPGRADE = "upgrade"
@@ -40,7 +40,7 @@ RESERVED = (MIGRATE, PLAN, UPGRADE)
 class Job:
     """One of the service's ``manage.py`` commands, offered by name.
 
-    An installer runs it in a container of its own (``arkitekt-service job <name>``),
+    An installer runs it in a container of its own (``arkitekt-service run <name>``),
     and so can an operator; the ones named in :attr:`Contract.setup` are also run as part of
     ``migrate``, in its process. It has to be safe to run again.
     """
@@ -52,6 +52,21 @@ class Job:
 
 
 @dataclasses.dataclass(frozen=True)
+class Start:
+    """How the service is started: the process a container of its image becomes.
+
+    Declared here and nowhere else — there is no script beside it. ``arkitekt-service serve``
+    and ``arkitekt-service debug`` replace themselves with it, so it receives the container's
+    signals as if it had been started directly.
+    """
+
+    command: tuple[str, ...]
+    """The program and its arguments: ``("daphne", "-b", "0.0.0.0", "-p", "80", "mikro_server.asgi:application")``."""
+    environment: Mapping[str, str] = dataclasses.field(default_factory=lambda: dict[str, str]())
+    """What it is started with beside the container's own environment."""
+
+
+@dataclasses.dataclass(frozen=True)
 class Contract:
     """One service, as its image declares it."""
 
@@ -60,6 +75,10 @@ class Contract:
     """The service's settings: what a rendered config is read by, and judged against."""
     render: Callable[[Facts], dict[str, JSON]]
     """This release's config, from a hub's facts."""
+    serve: Start
+    """What serves, and does nothing else (``arkitekt-service serve``)."""
+    debug: Start
+    """The same for development: the server that reloads on a change (``arkitekt-service debug``)."""
     upgrades: bool = False
     """Whether the release ships ``manage.py upgrade``."""
     jobs: Mapping[str, Job] = dataclasses.field(default_factory=lambda: dict[str, Job]())
@@ -79,25 +98,34 @@ class Contract:
             raise ValueError(f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job")
 
     def said(self) -> Description:
-        """The description an installer reads: the service's own, with what can be run in its image.
+        """The description an installer reads: the service's own, with every command to run in its image.
 
-        The jobs are not written into the description by hand: they are the ones declared here,
-        each as the command that runs it, with ``migrate`` — which runs the setup among them —
-        as the one that prepares the service.
+        None of them is written into the description by hand. Each is this command with the
+        name of what it runs — how the service is started, what writes its config, and its jobs,
+        with ``migrate`` (which runs the setup among them) as the one that prepares it — so an
+        installer runs exactly what is declared here, and knows none of it.
         """
         runner = ["arkitekt-service"]
         jobs = {
             MIGRATE: described.Job(
-                command=[*runner, MIGRATE],
+                command=[*runner, "run", MIGRATE],
                 summary="Wait for the database, apply this release's migrations, then run the service's setup.",
                 includes=list(self.setup),
             ),
-            PLAN: described.Job(command=[*runner, MIGRATE, "--plan"], summary="List the migrations `migrate` would apply, and apply nothing."),
-            **{name: described.Job(command=[*runner, "job", name], summary=job.summary) for name, job in self.jobs.items()},
+            PLAN: described.Job(command=[*runner, "run", PLAN], summary="List the migrations `migrate` would apply, and apply nothing."),
+            **{name: described.Job(command=[*runner, "run", name], summary=job.summary) for name, job in self.jobs.items()},
         }
         if self.upgrades:
-            jobs[UPGRADE] = described.Job(command=[*runner, UPGRADE], summary="What this release does to its data between two versions: `--from A --to B`.")
-        return self.description.model_copy(update={"jobs": jobs, "prepare": MIGRATE})
+            jobs[UPGRADE] = described.Job(command=[*runner, "run", UPGRADE], summary="What this release does to its data between two versions: `--from A --to B`.")
+        return self.description.model_copy(
+            update={
+                "render": [*runner, "render"],
+                "serve": [*runner, "serve"],
+                "debug": [*runner, "debug"],
+                "jobs": jobs,
+                "prepare": MIGRATE,
+            }
+        )
 
 
 def load() -> Contract:

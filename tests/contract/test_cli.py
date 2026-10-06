@@ -39,9 +39,10 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert said["identifier"] == "live.arkitekt.example"
     # What to run to prepare it is the image's to say.
     assert said["prepare"] == "migrate"
-    assert said["jobs"]["migrate"]["command"] == ["arkitekt-service", "migrate"]
-    # How it is started is the image's to say too, for both of the ways it is run.
-    assert said["serve"] == ["bash", "run.sh"] and said["debug"] == ["bash", "run-debug.sh"]
+    assert said["jobs"]["migrate"]["command"] == ["arkitekt-service", "run", "migrate"]
+    # How it is started is the image's to say too, for both of the ways it is run: through
+    # this command, which becomes what the service declared.
+    assert said["serve"] == ["arkitekt-service", "serve"] and said["debug"] == ["arkitekt-service", "debug"]
     assert said["sidecars"] == []
     assert said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
     assert said["offers"]["endpoints"] == {"rekuest_hook": "_rekuest/hook"}
@@ -111,11 +112,6 @@ def test_check_judges_a_config_as_it_stands(tmp_path: Path, capsys: pytest.Captu
     assert cli.main(["check", "--config", str(written(tmp_path, "renamed.yaml", renamed))]) == 0
 
 
-def test_a_release_without_upgrades_has_nothing_to_do(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["upgrade", "--from", "1.0.0", "--to", "2.0.0"]) == 0
-    assert "Nothing to upgrade" in capsys.readouterr().out
-
-
 def test_an_image_that_does_not_say_where_its_contract_is_has_none(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ARKITEKT_SERVICE")
     with pytest.raises(LookupError):
@@ -147,14 +143,14 @@ def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(m
 
     ran: list[list[str]] = []
     monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
-    assert cli.main(["migrate"]) == 0
+    assert cli.main(["run", "migrate"]) == 0
     # It waits for a connection and no longer: nothing here is worth a fixed delay. A job
     # that is not part of the setup (`reindex`) is not run.
     assert ran == [["wait_for_database", "-s", "0"], ["migrate", "--noinput"], ["ensureadmin"], ["ensurerepos", "--quiet"]]
 
     ran.clear()
     monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or (3 if "migrate" in step else 0))
-    assert cli.main(["migrate"]) == 3
+    assert cli.main(["run", "migrate"]) == 3
     assert [step[0] for step in ran] == ["wait_for_database", "migrate"], "nothing runs after a failed migration"
 
 
@@ -217,10 +213,10 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pyt
     said = json.loads(capsys.readouterr().out)
     assert said["prepare"] == "migrate"
     assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
-    assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "job", "ensureadmin"], "summary": "Create the operator account", "includes": []}
+    assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "run", "ensureadmin"], "summary": "Create the operator account", "includes": []}
     # `plan` is every service's; `upgrade` is only there for a release that ships one.
     assert set(said["jobs"]) == {"migrate", "plan", "ensureadmin", "ensurerepos", "reindex"}
-    assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "migrate", "--plan"]
+    assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "run", "plan"]
     assert said["render"] == ["arkitekt-service", "render"]
 
 
@@ -234,9 +230,10 @@ def test_whoever_starts_the_image_by_hand_is_told_what_to_run_instead(monkeypatc
     assert json.loads(printed.out)["name"] == "example"
     note = printed.err
     assert "an installer such as konstruktor" in note and "Nothing is being served" in note
-    assert "arkitekt-service migrate" in note and "prepare its database" in note
-    assert "bash run.sh" in note and "bash run-debug.sh" in note
-    assert "arkitekt-service job ensureadmin" in note and "Create the operator account" in note
+    # The one thing most people want comes first; then the steps an installer takes.
+    assert note.index("arkitekt-service standalone") < note.index("arkitekt-service run migrate")
+    assert "arkitekt-service serve" in note and "arkitekt-service debug" in note
+    assert "arkitekt-service run ensureadmin" in note and "Create the operator account" in note
 
 
 def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -244,12 +241,15 @@ def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pyt
     ran: list[list[str]] = []
     monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
 
-    assert cli.main(["job", "ensurerepos"]) == 0
-    assert cli.main(["job", "reindex", "--since", "2026-01-01"]) == 0
-    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"]]
+    assert cli.main(["run", "ensurerepos"]) == 0
+    assert cli.main(["run", "reindex", "--since", "2026-01-01"]) == 0
+    assert cli.main(["run", "plan"]) == 0
+    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"], ["migrate", "--plan"]]
 
-    assert cli.main(["job", "nope"]) == cli.REFUSED
-    assert "ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
+    assert cli.main(["run", "nope"]) == cli.REFUSED
+    assert "migrate, plan, ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
+    # An upgrade is only a job of a release that ships one.
+    assert cli.main(["run", "upgrade", "--from", "1", "--to", "2"]) == cli.REFUSED
 
 
 def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
@@ -273,7 +273,7 @@ def test_a_release_that_ships_an_upgrade_offers_it_as_a_job() -> None:
 
     assert "upgrade" not in example.contract.said().jobs
     shipped = dataclasses.replace(example.contract, upgrades=True).said()
-    assert shipped.jobs["upgrade"].command == ["arkitekt-service", "upgrade"]
+    assert shipped.jobs["upgrade"].command == ["arkitekt-service", "run", "upgrade"]
 
 
 def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: Path) -> None:
@@ -288,9 +288,10 @@ def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: P
     assert command, "the command is installed beside the interpreter"
     (tmp_path / "somewhere_else.py").write_text(
         "from pydantic_settings import BaseSettings\n"
-        "from arkitekt_service.contract import Contract, Description\n"
+        "from arkitekt_service.contract import Contract, Description, Start\n"
         "class Settings(BaseSettings): ...\n"
-        "contract = Contract(description=Description(name='elsewhere', identifier='live.arkitekt.elsewhere'), settings=Settings, render=lambda facts: {})\n"
+        "contract = Contract(description=Description(name='elsewhere', identifier='live.arkitekt.elsewhere'), settings=Settings, render=lambda facts: {},\n"
+        "    serve=Start(('echo', 'serving', 'elsewhere')), debug=Start(('echo', 'debugging')))\n"
     )
     environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
     ran = subprocess.run([command, "describe"], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
@@ -298,3 +299,46 @@ def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: P
     assert ran.returncode == 0, ran.stderr
     assert json.loads(ran.stdout)["name"] == "elsewhere"
     assert "Nothing is being served" in ran.stderr
+
+    # With no verb at all it says what it is too: that is what an image's own command relies on.
+    bare = subprocess.run([command], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+    assert json.loads(bare.stdout)["name"] == "elsewhere"
+
+    # And `serve` becomes what the service declared: this process is replaced by it.
+    served = subprocess.run([command, "serve"], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+    assert served.stdout.strip() == "serving elsewhere"
+
+
+def test_serve_and_debug_become_what_the_service_declared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing is prepared on the way: starting is one thing, preparing another."""
+    became: list[object] = []
+    monkeypatch.setattr(cli, "become", lambda start: became.append(start) or 0)
+    monkeypatch.setattr(cli, "manage", lambda *step: pytest.fail(f"`{step}` ran before the service was started"))
+
+    assert cli.main(["serve"]) == 0
+    assert cli.main(["debug"]) == 0
+    assert [start.command[0] for start in became] == ["daphne", "python"]
+    assert became[1].environment == {"EXAMPLE_DEBUG": "1"}
+
+
+def test_standalone_prepares_and_then_serves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole of it, in order, for whoever runs one image on its own."""
+    _with_jobs(monkeypatch)
+    did: list[str] = []
+    monkeypatch.setattr(cli, "manage", lambda *step: did.append(step[0]) or 0)
+    monkeypatch.setattr(cli, "become", lambda start: did.append(f"became {start.command[0]}") or 0)
+
+    assert cli.main(["standalone"]) == 0
+    assert did == ["wait_for_database", "migrate", "ensureadmin", "ensurerepos", "became daphne"]
+
+    did.clear()
+    assert cli.main(["standalone", "--debug"]) == 0
+    assert did[-1] == "became python"
+
+
+def test_standalone_serves_nothing_on_a_database_it_could_not_prepare(monkeypatch: pytest.MonkeyPatch) -> None:
+    _with_jobs(monkeypatch)
+    monkeypatch.setattr(cli, "manage", lambda *step: 3 if step[0] == "migrate" else 0)
+    monkeypatch.setattr(cli, "become", lambda start: pytest.fail("served on a database that was not prepared"))
+
+    assert cli.main(["standalone"]) == 3

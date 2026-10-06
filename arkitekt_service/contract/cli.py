@@ -16,22 +16,23 @@
 ``check [--config FILE]``
     Judges a config as it stands — the file the service would start on.
 
-``job NAME [ARGS...]``
-    Runs one of the jobs the service declares (``describe`` lists them): a ``manage.py`` command
-    by the name the service gave it. An installer runs these for an operator who asks for one
-    again; the ones a service names as its setup also run as part of ``migrate``.
+``serve`` / ``debug``
+    Becomes the service: the process the service declared as how it is started, for production
+    or for development. Nothing is prepared first — that is ``run migrate``, a job of its own.
 
-``migrate [--plan]``
-    Everything the service's database needs before the service starts on it: waits for the
-    database, applies the release's migrations (``manage.py migrate``), then runs the jobs the
-    service named as its setup (an admin account, seeded rows), all in one process. An installer runs it once
-    per build, before the first start and before an update's — which is why a service's own
-    start does nothing but serve. ``--plan`` lists the migrations that would run, and runs
-    nothing.
+``run JOB [ARGS...]``
+    Runs one of the service's jobs by name (``describe`` lists them). ``migrate`` is every
+    service's: it waits for the database, applies the release's migrations, then runs the jobs
+    the service named as its setup (an admin account, seeded rows), all in one process. An
+    installer runs it once per build, before the first start and before an update's — which
+    is why a service's own start does nothing but serve. ``plan`` lists the migrations that
+    would run and runs nothing; ``upgrade --from A --to B`` is what a release does to its data
+    between two versions, if it ships anything of the kind; the rest are the service's own.
 
-``upgrade --from A --to B``
-    What the release does to its data between two versions (``manage.py upgrade``), if it
-    ships anything of the kind.
+``standalone [--debug]``
+    ``run migrate``, then ``serve`` (or ``debug``): the whole of it, for whoever runs one image
+    on its own. An installer never does this: it prepares once, and starts as often as it
+    likes.
 
 Exit codes: ``0`` done. ``78`` (``EX_CONFIG``) is this release's own no — facts it cannot be
 configured from, an override it does not read, an invalid config — with the reason on stderr,
@@ -53,7 +54,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from arkitekt_service.contract.contract import Contract, Refused, load
+from arkitekt_service.contract.contract import MIGRATE, PLAN, UPGRADE, Contract, Refused, Start, load
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
@@ -137,11 +138,6 @@ def render(contract: Contract, facts: Path, overrides: Path) -> dict[str, JSON]:
     return document
 
 
-def _manage(*arguments: str) -> int:
-    """Hand over to the service's own ``manage.py``: its exit code is the answer."""
-    os.execvp(sys.executable, [sys.executable, "manage.py", *arguments])
-
-
 def manage(*arguments: str) -> int:
     """Run one of the service's ``manage.py`` commands in this process; its exit code.
 
@@ -181,13 +177,33 @@ def prepare(contract: Contract) -> int:
     return 0
 
 
-def job(contract: Contract, name: str, extra: Sequence[str]) -> int:
-    """Run one of the service's declared jobs, with whatever was passed after its name."""
+def run(contract: Contract, name: str, extra: Sequence[str]) -> int:
+    """Run one of the service's jobs by name, with whatever was passed after it."""
+    if name == MIGRATE:
+        return prepare(contract)
+    if name == PLAN:
+        return manage("migrate", "--plan", *extra)
+    if name == UPGRADE and contract.upgrades:
+        return manage("upgrade", *extra)
     declared = contract.jobs.get(name)
     if declared is None:
-        offered = ", ".join(sorted(contract.jobs)) or "none"
+        offered = ", ".join(contract.said().jobs)
         raise No(f"there is no job `{name}`", [f"this release offers: {offered}"])
     return manage(*declared.manage, *extra)
+
+
+def become(start: Start) -> int:
+    """Replace this process with the service's own: what a container of the image then is."""
+    os.environ.update(start.environment)
+    os.execvp(start.command[0], list(start.command))
+
+
+def standalone(contract: Contract, debug: bool) -> int:
+    """Prepare the database, then serve: nothing is served on a database that was not prepared."""
+    code = prepare(contract)
+    if code != 0:
+        return code
+    return become(contract.debug if debug else contract.serve)
 
 
 def notice(said: Description) -> None:
@@ -197,24 +213,23 @@ def notice(said: Description) -> None:
     gets: a page of JSON, and a container that stops. This goes to stderr — an installer reads
     stdout, and reads nothing but the description there — and says what they wanted to run.
     """
-    prepare = said.jobs.get(said.prepare) if said.prepare else None
     lines = [
         "",
         f"This is the {said.name} service of an Arkitekt hub. Started with no command, its image only",
         "describes itself (above) and stops: that is how an installer such as konstruktor asks",
         "what it is, before it writes anything. Nothing is being served.",
         "",
-        "To run it yourself, name what you want:",
+        "To run it yourself:",
+        "",
+        f"  {'arkitekt-service standalone':<36}  prepare its database, then serve",
+        f"  {'arkitekt-service standalone --debug':<36}  the same, with the development server",
+        "",
+        "Or one step at a time, as an installer does:",
         "",
     ]
-    if prepare is not None:
-        lines.append(f"  {shlex.join(prepare.command):<44}  prepare its database (once per release)")
-    lines.append(f"  {shlex.join(said.serve):<44}  serve")
-    lines.append(f"  {shlex.join(said.debug):<44}  serve, for development")
-    others = {name: job for name, job in said.jobs.items() if name != said.prepare}
-    if others:
-        lines += ["", "What else can be run in it:", ""]
-        lines += [f"  {shlex.join(job.command):<44}  {job.summary}".rstrip() for job in others.values()]
+    lines += [f"  {shlex.join(job.command):<36}  {job.summary}".rstrip() for job in said.jobs.values()]
+    lines.append(f"  {shlex.join(said.serve):<36}  Serve, and nothing else.")
+    lines.append(f"  {shlex.join(said.debug):<36}  The same, with the development server.")
     lines += ["", "Each needs the service's config at /workspace/config.yaml, which an installer writes too.", ""]
     print("\n".join(lines), file=sys.stderr)
 
@@ -222,21 +237,20 @@ def notice(said: Description) -> None:
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one verb; the exit code is its answer."""
     parser = argparse.ArgumentParser(prog="arkitekt-service", description="What this service's image answers a hub's installer.")
-    verbs = parser.add_subparsers(dest="verb", required=True)
-    verbs.add_parser("describe", help="What the service needs from a hub and offers to it, as JSON.")
+    verbs = parser.add_subparsers(dest="verb")
+    verbs.add_parser("describe", help="What the service is, needs and offers, and what to run in its image, as JSON. The default.")
     rendering = verbs.add_parser("render", help="This release's config, from a hub's facts.")
     rendering.add_argument("--facts", type=Path, default=Path(FACTS))
     rendering.add_argument("--overrides", type=Path, default=Path(OVERRIDES))
     checking = verbs.add_parser("check", help="Whether this release reads a config as written.")
     checking.add_argument("--config", type=Path, default=None)
-    migrating = verbs.add_parser("migrate", help="The release's database migrations.")
-    migrating.add_argument("--plan", action="store_true", help="List what would run, and run nothing.")
-    running = verbs.add_parser("job", help="One of the jobs the service declares, by name.")
+    verbs.add_parser("serve", help="Serve, and nothing else.")
+    verbs.add_parser("debug", help="Serve with the development server, and nothing else.")
+    running = verbs.add_parser("run", help="One of the service's jobs, by name: migrate, plan, and its own.")
     running.add_argument("name")
     running.add_argument("extra", nargs=argparse.REMAINDER, help="Passed on to the job.")
-    upgrading = verbs.add_parser("upgrade", help="What the release does to its data between two versions.")
-    upgrading.add_argument("--from", dest="left", required=True)
-    upgrading.add_argument("--to", dest="reached", required=True)
+    alone = verbs.add_parser("standalone", help="Prepare the database, then serve: one image, run on its own.")
+    alone.add_argument("--debug", action="store_true", help="Serve with the development server.")
     asked = parser.parse_args(arguments)
 
     # The service is the code in the working directory: its contract's module and its
@@ -245,7 +259,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     if here not in sys.path:
         sys.path.insert(0, here)
     contract = load()
-    verb: str = asked.verb  # pyright: ignore[reportAny]  argparse's namespace
+    verb: str = asked.verb or "describe"  # pyright: ignore[reportAny]  argparse's namespace
     try:
         if verb == "describe":
             said = contract.said()
@@ -259,19 +273,17 @@ def main(arguments: Sequence[str] | None = None) -> int:
             given: Path | None = asked.config  # pyright: ignore[reportAny]
             path = given or Path(os.environ.get(CONFIG_FILE, "config.yaml"))
             judge(contract, _document(path, "the config"))
-        elif verb == "migrate":
-            plan: bool = asked.plan  # pyright: ignore[reportAny]
-            return _manage("migrate", "--plan") if plan else prepare(contract)
-        elif verb == "job":
+        elif verb == "serve":
+            return become(contract.serve)
+        elif verb == "debug":
+            return become(contract.debug)
+        elif verb == "run":
             name: str = asked.name  # pyright: ignore[reportAny]
             extra: list[str] = asked.extra  # pyright: ignore[reportAny]
-            return job(contract, name, extra)
-        elif verb == "upgrade":
-            left: str = asked.left  # pyright: ignore[reportAny]
-            reached: str = asked.reached  # pyright: ignore[reportAny]
-            if contract.upgrades:
-                return _manage("upgrade", "--from", left, "--to", reached)
-            print(f"Nothing to upgrade between {left} and {reached}.")
+            return run(contract, name, extra)
+        elif verb == "standalone":
+            debug: bool = asked.debug  # pyright: ignore[reportAny]
+            return standalone(contract, debug)
     except No as refusal:
         print(f"{contract.description.name}: {refusal.headline}:", file=sys.stderr)
         for reason in refusal.reasons:

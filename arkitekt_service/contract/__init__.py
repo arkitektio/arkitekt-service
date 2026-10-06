@@ -22,9 +22,9 @@ service says, and :mod:`arkitekt_service.contract.cli` for the verbs and their e
 """
 
 from arkitekt_service.contract import blocks
-from arkitekt_service.contract.contract import Contract, Job, Refused
+from arkitekt_service.contract.contract import Contract, Job, Refused, Start
 from arkitekt_service.contract.description import Description, Needs, Offers, Scope, Sidecar
 from arkitekt_service.contract.facts import Facts, Peer
 from arkitekt_service.contract.json_types import JSON
 
-__all__ = ["JSON", "Contract", "Description", "Facts", "Job", "Needs", "Offers", "Peer", "Refused", "Scope", "Sidecar", "blocks"]
+__all__ = ["JSON", "Contract", "Description", "Facts", "Job", "Needs", "Offers", "Peer", "Refused", "Scope", "Sidecar", "Start", "blocks"]
