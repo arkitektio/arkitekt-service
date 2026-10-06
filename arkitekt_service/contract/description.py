@@ -77,6 +77,11 @@ class Description(Said):
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
     offers: Offers = Field(default_factory=Offers)
+    serve: list[str] = Field(
+        default_factory=lambda: ["bash", "run.sh"],
+        description="What a container of the image runs to serve, and nothing else: an installer writes this as the service's command. Also the image's own `CMD`.",
+    )
+    debug: list[str] = Field(default_factory=lambda: ["bash", "run-debug.sh"], description="The same for development: the server that reloads on a change. Serves, and nothing else, like `serve`.")
     jobs: dict[str, Job] = Field(
         default_factory=dict,
         description="What can be run in the image beside its start, by name. The start itself is the image's own command (its `CMD`): a container of the image serves, and does nothing else.",

@@ -37,9 +37,11 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     said = json.loads(capsys.readouterr().out)
     assert said["contract"] == 2 and said["name"] == "example"
     assert said["identifier"] == "live.arkitekt.example"
-    # What to run to prepare it is the image's to say; its start is the image's own command.
+    # What to run to prepare it is the image's to say.
     assert said["prepare"] == "migrate"
     assert said["jobs"]["migrate"]["command"] == ["python", "-m", "arkitekt_service", "migrate"]
+    # How it is started is the image's to say too, for both of the ways it is run.
+    assert said["serve"] == ["bash", "run.sh"] and said["debug"] == ["bash", "run-debug.sh"]
     assert said["sidecars"] == []
     assert said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
     assert said["offers"]["endpoints"] == {"rekuest_hook": "_rekuest/hook"}

@@ -75,8 +75,10 @@ What `describe` prints also says how the image is run, so an installer assumes n
   service with nothing to prepare.
 - `sidecars`: what the service does not run without and ships as an image of its own
   (rekuest's takt), named from the service's image.
-- How it serves is not in there: that is the image's own `CMD`, which an installer leaves
-  alone.
+- `serve` and `debug`: what a container of the image runs to serve, in production and in
+  development (`bash run.sh`, `bash run-debug.sh` unless the service says otherwise). An
+  installer writes the one that applies as the service's command; the image's own `CMD` is
+  the same as `serve`, for whoever runs it without one.
 
 A service declares itself in one module, named by `ARKITEKT_SERVICE` in its Dockerfile:
 
