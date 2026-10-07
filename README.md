@@ -54,6 +54,7 @@ is being served and what to run instead.
 
 What the description says:
 
+- `name`: what a hub calls the service: lowercase letters, digits and underscores, no hyphen.
 - `identifier`: what the service is registered as, and what a client asks for.
 - `needs`, `offers`, `requires`: what a hub has to provide, and what other services are
   wired to.

@@ -11,15 +11,16 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+#: A name Postgres takes as it is written: a lowercase letter, then lowercase letters, digits
+#: and underscores. Nothing that would have to be quoted, so that whoever creates a database
+#: or a role can say its name anywhere without escaping it. A service's name and the names
+#: of its databases are both held to it, because a hub puts the two together.
+PLAIN_NAME = re.compile(r"[a-z][a-z0-9_]*")
 
 #: The database every service has unless it says otherwise.
 MAIN_DATABASE = "main"
-
-#: A name Postgres takes as it is written: a lowercase letter, then lowercase letters, digits
-#: and underscores. Nothing that would have to be quoted, so that whoever creates the database
-#: can say its name anywhere without escaping it.
-DATABASE_NAME = re.compile(r"[a-z][a-z0-9_]*")
 
 #: How long a Postgres name may be (``NAMEDATALEN`` - 1). A hub calls a service's database
 #: ``<service>_<name>``, so the name a service picks has to leave room for its own.
@@ -59,7 +60,7 @@ class Needs(Said):
     @classmethod
     def _databases_are_named_as_postgres_names_them(cls, names: list[str]) -> list[str]:
         for name in names:
-            if not DATABASE_NAME.fullmatch(name) or len(name) > POSTGRES_NAME_LENGTH:
+            if not PLAIN_NAME.fullmatch(name) or len(name) > POSTGRES_NAME_LENGTH:
                 raise ValueError(
                     f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase "
                     f"letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most"
@@ -106,7 +107,7 @@ class Description(Said):
     """A service, as its image describes it."""
 
     contract: Literal[2] = Field(default=2, description="The version of this contract.")
-    name: str = Field(description="The service's name: what a hub calls it by default.")
+    name: str = Field(description="The service's name: what a hub calls it, its path at the gateway, and the first half of its databases' names. Lowercase letters, digits and underscores, starting with a letter: no hyphen.")
     identifier: str = Field(description="What the service is registered as at the coordination server, and what a client asks for: `live.arkitekt.mikro`.")
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
@@ -133,3 +134,22 @@ class Description(Said):
     sidecars: list[Sidecar] = Field(default_factory=list)
     requires: dict[str, str] = Field(default_factory=dict, description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').")
     upgrade_from: str | None = Field(default=None, description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.")
+
+    @field_validator("name")
+    @classmethod
+    def _the_name_is_plain(cls, name: str) -> str:
+        if not PLAIN_NAME.fullmatch(name):
+            raise ValueError(
+                f"`{name}` cannot be a service's name: a lowercase letter, then lowercase letters, digits "
+                "and underscores. No hyphen: its databases are called after it, and Postgres would have to quote one"
+            )
+        return name
+
+    @model_validator(mode="after")
+    def _its_databases_names_fit(self) -> Description:
+        for database in self.needs.databases:
+            called = f"{self.name}_{database}"
+            if len(called) > POSTGRES_NAME_LENGTH:
+                raise ValueError(f"`{called}` is longer than the {POSTGRES_NAME_LENGTH} characters Postgres keeps of a name")
+        return self
+

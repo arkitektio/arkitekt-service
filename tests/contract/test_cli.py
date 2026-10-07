@@ -377,3 +377,19 @@ def test_a_block_is_written_for_the_database_asked_for_by_name() -> None:
     assert blocks.postgres(facts, "events")["db_name"] == "example_events"
     with pytest.raises(Refused, match="called `archive`"):
         blocks.postgres(facts, "archive")
+
+
+@pytest.mark.parametrize("name", ["omero-ark", "Mikro", "2fast", "my service", ""])
+def test_a_service_is_not_named_what_postgres_would_have_to_quote(name: str) -> None:
+    from arkitekt_service.contract import Description
+
+    with pytest.raises(ValueError, match="cannot be a service's name"):
+        Description(name=name, identifier="live.arkitekt.example")
+    assert Description(name="omero_ark", identifier="live.arkitekt.omero_ark").name == "omero_ark"
+
+
+def test_a_database_is_called_after_its_service_and_has_to_fit() -> None:
+    from arkitekt_service.contract import Description, Needs
+
+    with pytest.raises(ValueError, match="longer than the 63"):
+        Description(name="s" * 40, identifier="live.arkitekt.long", needs=Needs(databases=["d" * 30]))
