@@ -199,11 +199,12 @@ INSTALLED_APPS = [..., "arkitekt_service.server"]
 ```python
 from arkitekt_service.server.settings import DjangoSettings, PostgresSettings, RedisSettings, ServiceSettings
 
-class Settings(ServiceSettings):      # the config file, with the environment over it
+
+class Settings(ServiceSettings):  # the config file, with the environment over it
     django: DjangoSettings
     postgres: PostgresSettings
     redis: RedisSettings
-    ...                               # and what is the service's own
+    ...  # and what is the service's own
 ```
 
 brings `manage.py ensureadmin` (the operator account the config names), `manage.py
@@ -215,6 +216,7 @@ that warns, when `migrate` runs, about keys the release does not read.
 ```python
 # tests/conftest.py
 pytest_plugins = ["arkitekt_service.testing"]
+
 
 # tests/test_hub.py
 @pytest.mark.hub

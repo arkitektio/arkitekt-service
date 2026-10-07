@@ -41,6 +41,15 @@ import pytest
 if TYPE_CHECKING:
     from konstruktor import Hub  # pyright: ignore[reportMissingImports]
 
+# The hub is made by konstruktor's own fixtures. Loaded here, with this plugin, so that their
+# command-line options exist: a plugin imported once a test runs comes too late for that.
+try:
+    import konstruktor.pytest_plugin  # noqa: F401  # pyright: ignore[reportMissingImports]
+except ImportError:
+    pytest_plugins: list[str] = []
+else:
+    pytest_plugins = ["konstruktor.pytest_plugin"]
+
 #: Names the image under test, when ``--service-image`` does not.
 IMAGE = "ARKITEKT_SERVICE_IMAGE"
 #: The redeem grant of a hub's coordination server.
@@ -155,8 +164,6 @@ def service_image(pytestconfig: pytest.Config) -> str:
 def service_hub(request: pytest.FixtureRequest, service_image: str) -> Iterator[ServiceHub]:
     """A hub for the session that runs the image under test, and a coordination server."""
     pytest.importorskip("konstruktor", reason="the hub is made by konstruktor: pip install konstruktor")
-    if not request.config.pluginmanager.hasplugin("konstruktor"):
-        request.config.pluginmanager.import_plugin("konstruktor.pytest_plugin")
     make = request.getfixturevalue("konstruktor_hub")
     hub: Hub = make(service_images=[service_image], redeem_tokens=4)
     services = [name for name in hub.services if name != "lok"]
