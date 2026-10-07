@@ -100,6 +100,96 @@ class Sidecar(Said):
     optional: bool = Field(default=False, description="Whether the service runs without it: an installer starts an optional one only on a hub that asked for what it brings.")
 
 
+#: What a structure is known by across a hub: ``@mikro/arraydataset``.
+STRUCTURE_IDENTIFIER = re.compile(r"@[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+#: What a descriptor's value is; ``ANY`` when the service does not say.
+DescriptorType = Literal["ANY", "INT", "FLOAT", "STRING", "BOOL", "LIST"]
+
+#: What can be announced about an object.
+SignalKind = Literal["CREATED", "UPDATED", "DELETED"]
+
+
+class Descriptor(Said):
+    """One descriptor of a structure's objects: ``Descriptor(key="@mikro/n_channels", type="INT")``."""
+
+    key: str
+    type: DescriptorType = "ANY"
+    description: str | None = None
+
+
+class Structure(Said):
+    """A kind of object the service holds, known to the hub by its identifier."""
+
+    identifier: str = Field(description="`@package/key`: what an action's port asks for, and what a signal is about.")
+    label: str | None = None
+    description: str | None = None
+    descriptors: list[Descriptor] = Field(default_factory=list, description="What is known of each of its objects, by key: what an action may require of an input, and a trigger test.")
+
+    @field_validator("identifier")
+    @classmethod
+    def _the_identifier_is_one(cls, identifier: str) -> str:
+        if not STRUCTURE_IDENTIFIER.fullmatch(identifier):
+            raise ValueError(f"a structure identifier looks like @package/key, not {identifier!r}")
+        return identifier
+
+    @field_validator("descriptors")
+    @classmethod
+    def _a_key_is_said_once(cls, descriptors: list[Descriptor]) -> list[Descriptor]:
+        keys = [descriptor.key for descriptor in descriptors]
+        if len(set(keys)) != len(keys):
+            raise ValueError("a descriptor key is declared twice")
+        return descriptors
+
+
+class Signal(Said):
+    """What the service announces about a structure's objects, and with which descriptors."""
+
+    identifier: str
+    kinds: list[SignalKind] = Field(default_factory=lambda: ["CREATED"], min_length=1)
+    descriptors: list[str] = Field(default_factory=list, description="The descriptor keys an announcement carries: what a trigger can test.")
+    description: str | None = None
+
+
+class Hosts(Said):
+    """What exists on a hub because the service is there: the structures it holds and the
+    signals it sends about them.
+
+    Said by the image, so that a hub knows it without asking the running service: an installer
+    hands it to the hub's rekuest, which catalogues it. Hosting and announcing are two
+    declarations: a structure with no signal is hosted silently.
+    """
+
+    structures: list[Structure] = Field(default_factory=list)
+    signals: list[Signal] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _each_is_said_once(self) -> Hosts:
+        for what, identifiers in (("structure", [s.identifier for s in self.structures]), ("signal", [s.identifier for s in self.signals])):
+            twice = sorted({identifier for identifier in identifiers if identifiers.count(identifier) > 1})
+            if twice:
+                raise ValueError(f"the {what} {', '.join(twice)} is declared twice")
+        return self
+
+    def structure(self, identifier: str) -> Structure | None:
+        return next((structure for structure in self.structures if structure.identifier == identifier), None)
+
+    def signal(self, identifier: str) -> Signal | None:
+        return next((signal for signal in self.signals if signal.identifier == identifier), None)
+
+
+class Source(Said):
+    """Where the code in the image came from, and where it sits in it.
+
+    What an installer needs to run the service from a checkout instead: the repository to
+    clone, the commit the image was built from, and the folder a checkout is mounted over.
+    """
+
+    repository: str = Field(description="What to clone: `https://github.com/arkitektio/mikro-server-next`.")
+    revision: str | None = Field(default=None, description="The commit the image was built from, when the build said.")
+    path: str = Field(default="/workspace", description="Where the service's code sits in the image: a checkout is mounted here.")
+
+
 class Description(Said):
     """A service, as its image describes it."""
 
@@ -131,6 +221,8 @@ class Description(Said):
         description="The job that brings the service's database to this release: run once per build, before the first start and before an update's. Null when there is nothing to prepare.",
     )
     sidecars: list[Sidecar] = Field(default_factory=list)
+    hosts: Hosts = Field(default_factory=Hosts, description="The structures the service holds and the signals it sends about them.")
+    source: Source | None = Field(default=None, description="Where the image's code came from. Null for an image that does not say: it cannot be run from a checkout without being told one.")
     requires: dict[str, str] = Field(default_factory=dict, description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').")
     upgrade_from: str | None = Field(default=None, description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.")
 

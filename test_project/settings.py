@@ -12,7 +12,7 @@ from arkitekt_service.trust import public_jwk
 SECRET_KEY = "rekuest-service-tests"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
-INSTALLED_APPS = ["django.contrib.contenttypes", "test_app"]
+INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "arkitekt_service.server", "test_app"]
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 ROOT_URLCONF = "test_project.urls"
 USE_TZ = True

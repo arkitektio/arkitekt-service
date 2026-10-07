@@ -16,6 +16,10 @@ from arkitekt_service.contract.json_types import JSON
 
 #: Names the module holding a service's ``contract``, in its image.
 ENVIRONMENT = "ARKITEKT_SERVICE"
+#: What the image's build says of where its code came from: the repository, and the commit.
+#: Set from build arguments, so that no contract carries a commit by hand.
+SOURCE_REPOSITORY = "ARKITEKT_SOURCE_REPOSITORY"
+SOURCE_REVISION = "ARKITEKT_SOURCE_REVISION"
 
 
 class Refused(Exception):
@@ -101,6 +105,9 @@ class Contract:
         if unknown:
             raise ValueError(f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job")
 
+    def _source(self) -> described.Source | None:
+        return _built_from(self.description.source)
+
     def said(self) -> Description:
         """The description an installer reads: the service's own, with every command to run in its image.
 
@@ -127,6 +134,7 @@ class Contract:
             jobs[UPGRADE] = described.Job(command=[*runner, "run", UPGRADE], summary="What this release does to its data between two versions: `--from A --to B`.")
         return self.description.model_copy(
             update={
+                "source": self._source(),
                 "render": [*runner, "render"],
                 "serve": [*runner, "serve"],
                 "debug": [*runner, "debug"],
@@ -134,6 +142,15 @@ class Contract:
                 "prepare": MIGRATE,
             }
         )
+
+
+def _built_from(declared: described.Source | None) -> described.Source | None:
+    """The source as the build says it, over what the contract declares for a build that says nothing."""
+    repository = os.environ.get(SOURCE_REPOSITORY) or (declared.repository if declared else None)
+    if not repository:
+        return None
+    revision = os.environ.get(SOURCE_REVISION) or (declared.revision if declared else None)
+    return described.Source(repository=repository, revision=revision or None, **({"path": declared.path} if declared else {}))
 
 
 def load() -> Contract:

@@ -393,3 +393,37 @@ def test_a_database_is_called_after_its_service_and_has_to_fit() -> None:
 
     with pytest.raises(ValueError, match="longer than the 63"):
         Description(name="s" * 40, identifier="live.arkitekt.long", needs=Needs(databases=["d" * 30]))
+
+
+def test_the_description_says_where_the_code_came_from_as_the_build_said(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arkitekt_service.contract import Source
+    from arkitekt_service.contract.contract import load
+
+    contract = load()
+    assert contract.said().source is None, "an image whose build said nothing cannot be run from a checkout unasked"
+
+    monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example")
+    monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "0123abc")
+    assert contract.said().source == Source(repository="https://github.com/arkitektio/example", revision="0123abc", path="/workspace")
+
+
+def test_a_contract_names_the_repository_a_local_build_does_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    import dataclasses
+
+    from arkitekt_service.contract import Source
+    from arkitekt_service.contract.contract import load
+
+    contract = load()
+    declared = dataclasses.replace(contract, description=contract.description.model_copy(update={"source": Source(repository="https://example.org/mine", path="/srv/app")}))
+    assert declared.said().source == Source(repository="https://example.org/mine", path="/srv/app")
+
+    monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "0123abc")
+    monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/a/fork")
+    assert declared.said().source == Source(repository="https://github.com/a/fork", revision="0123abc", path="/srv/app")
+
+
+def test_what_a_service_hosts_is_part_of_what_its_image_says(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["describe"]) == 0
+    said = json.loads(capsys.readouterr().out)
+    assert said["hosts"] == {"structures": [], "signals": []}
+    assert said["source"] is None

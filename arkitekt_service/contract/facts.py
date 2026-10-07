@@ -13,6 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from arkitekt_service.contract.description import Hosts
 from arkitekt_service.contract.json_types import JSON
 
 
@@ -102,6 +103,7 @@ class Peer(Fact):
     identifier: str | None = Field(default=None, description="Its identifier in the trust bundle, for a service of the hub.")
     url: str = Field(description="Where it is reached from inside the hub, with its path.")
     offers: dict[str, str] = Field(default_factory=dict, description="The endpoints it offers, by kind, as full internal URLs (rekuest_service, rekuest_hook, agent, …).")
+    hosts: Hosts | None = Field(default=None, description="The structures it holds and the signals it sends, as its image says: what the hub's rekuest catalogues without asking it.")
     settings: dict[str, str] = Field(default_factory=dict, description="What else one needs to use it (an API key, a socket path).")
 
 

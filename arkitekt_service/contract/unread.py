@@ -15,6 +15,10 @@ from pydantic_settings import BaseSettings
 
 from arkitekt_service.contract.json_types import JSON
 
+#: The blocks every service spells the same way: judged like a service's own, wherever a
+#: service's settings use them.
+SHARED = "arkitekt_service.server.settings"
+
 
 @dataclasses.dataclass(frozen=True)
 class Unread:
@@ -33,11 +37,11 @@ class Unread:
 def _models_of(annotation: object, module: str) -> list[type[BaseModel]]:
     """The settings models of ``module`` an annotation holds: itself, or inside ``Optional`` / ``list``.
 
-    Only that module's: a block another package defines is that package's to judge, and its
+    Only that module's, and the blocks all services share: a block another package defines is that package's to judge, and its
     aliases are spellings, not former names.
     """
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return [annotation] if annotation.__module__ == module else []
+        return [annotation] if annotation.__module__ in (module, SHARED) else []
     inside = typing.cast("tuple[object, ...]", typing.get_args(annotation))
     return [model for inner in inside for model in _models_of(inner, module)]
 

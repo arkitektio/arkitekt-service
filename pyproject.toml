@@ -55,7 +55,7 @@ fallback-version = "0.0.0"
 #   uv run pytest tests/hook --ds=hook_project.settings
 DJANGO_SETTINGS_MODULE = "test_project.settings"
 pythonpath = ["."]
-testpaths = ["tests/contract", "tests/service"]
+testpaths = ["tests/contract", "tests/service", "tests/server"]
 
 [tool.ruff]
 line-length = 200

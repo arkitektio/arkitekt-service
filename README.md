@@ -1,13 +1,14 @@
 # arkitekt-service
 
-What a service of an [Arkitekt](https://arkitekt.live) hub is made with. Three parts, for three
-different things a service process does:
+What a service of an [Arkitekt](https://arkitekt.live) hub is made with. Its parts, each for one thing a service does:
 
 | | |
 |---|---|
 | `arkitekt_service.contract` | What the service's **image** answers the hub's installer: what it needs, its own config written from the hub's facts, its migrations and upgrades. |
 | `arkitekt_service.service` | What the service **is** to the hub's rekuest: the structures it hosts and the signals it emits. |
 | `arkitekt_service.hook` | What can be **done** in its process: a HookAgent, whose actions rekuest reaches over HTTP. |
+| `arkitekt_service.server` | What every service is as a **Django server**: the settings blocks they all spell alike, `ensureadmin`, `validate_settings`. |
+| `arkitekt_service.testing` | A pytest fixture and check that **prove an image** in a hub made for the test. |
 
 They share `arkitekt_service.trust` — no secrets between services: every instance signs with
 its own key and the hub vouches for the public halves — and nothing else. A process uses any of
@@ -71,6 +72,11 @@ What the description says:
   ensureadmin`, which is `arkitekt-service run ensureadmin` in a container of the image.
 - `prepare`: which job brings the database to the release (`migrate`).
 - `render`: what writes the release's config from the hub's facts.
+- `hosts`: the structures the service holds and the signals it sends about them, as data
+  (see below). A hub's installer hands this to the hub's rekuest.
+- `source`: where the image's code came from (repository, commit) and where it sits in the
+  image, so that an installer can run the service from a checkout. The build says it:
+  `ARKITEKT_SOURCE_REPOSITORY` and `ARKITEKT_SOURCE_REVISION` in the image's environment.
 - `sidecars`: what runs beside the service as an image of its own: one it does not run
   without (rekuest's takt, named from the service's image), or an `optional` one it drives
   on a hub that has the use for it (Lok's mesh control server).
@@ -139,14 +145,30 @@ The hub's facts (`arkitekt_service.contract.facts`) and a service's description
 (`arkitekt_service.contract.description`) are versioned documents; an image refuses facts it
 does not understand rather than dropping them.
 
-## A service, and a hook agent
+## What a service hosts
+
+Said once, as data, in the contract — so a hub knows it from the image, before the service runs:
 
 ```python
-from arkitekt_service.service import Descriptor, Service, organization_of
+from arkitekt_service.contract import Descriptor, Hosts, Signal, Structure
+
+HOSTS = Hosts(
+    structures=[Structure(identifier="@mikro/arraydataset", label="Array Dataset",
+                          descriptors=[Descriptor(key="@mikro/n_channels", type="INT")])],
+    signals=[Signal(identifier="@mikro/arraydataset", kinds=["CREATED", "UPDATED", "DELETED"],
+                    descriptors=["@mikro/n_channels"])],
+)
+contract = Contract(description=Description(name="mikro", ..., hosts=HOSTS), ...)
+```
+
+and bound to the models and the code where Django is loaded:
+
+```python
+from arkitekt_service.service import Service, organization_of
 from arkitekt_service.hook import HookAgent
 
-service = Service("mikro", description="Microscopy data")
-dataset = service.structure(ArrayDataset, "@mikro/arraydataset", descriptors=[Descriptor("@mikro/n_channels", "INT")], describe=array_descriptors)
+service = Service("mikro", hosts=contract.description.hosts)
+dataset = service.structure(ArrayDataset, "@mikro/arraydataset", describe=array_descriptors)
 service.model_signal(dataset, organization=organization_of())
 
 agent = HookAgent("mikro", description="mikro's housekeeping")
@@ -161,7 +183,49 @@ def reembed_stale(organization: str) -> dict:
 urlpatterns = [..., *service.urls, *agent.urls]
 ```
 
+A structure the contract does not declare cannot be bound, and a service whose contract declares
+one that nothing binds does not start: what the image says and what the service holds cannot
+drift apart. The hub's rekuest catalogues what the installer handed it; the service still
+answers the same at `_rekuest/service/manifest`, for a rekuest nobody told.
+
 A service says what exists; an agent says what can be done. Neither knows the other.
+
+## A Django server like the others
+
+```python
+INSTALLED_APPS = [..., "arkitekt_service.server"]
+```
+
+```python
+from arkitekt_service.server.settings import DjangoSettings, PostgresSettings, RedisSettings, ServiceSettings
+
+class Settings(ServiceSettings):      # the config file, with the environment over it
+    django: DjangoSettings
+    postgres: PostgresSettings
+    redis: RedisSettings
+    ...                               # and what is the service's own
+```
+
+brings `manage.py ensureadmin` (the operator account the config names), `manage.py
+validate_settings [--strict]` (the config as the release reads it, secrets masked) and a check
+that warns, when `migrate` runs, about keys the release does not read.
+
+## Proving an image
+
+```python
+# tests/conftest.py
+pytest_plugins = ["arkitekt_service.testing"]
+
+# tests/test_hub.py
+@pytest.mark.hub
+def test_the_image_runs_in_a_hub(service_hub):
+    check_service(service_hub)
+```
+
+`pytest -m hub --service-image mikro:dev` starts a hub with nothing but a coordination server
+and that image, as an installer would, and asks of it what every service has to answer: ready,
+healthy, closed to nobody, open to an app the hub issued a token to, fully migrated, never
+restarted. It needs Docker and `konstruktor`; it is for the job that builds the image.
 
 ## Development
 

@@ -42,6 +42,7 @@ from typing import Any
 from django.conf import settings
 from django.db import transaction
 
+from arkitekt_service.contract.description import Hosts
 from arkitekt_service.service.structures import Descriptor, Structure, check_identifier
 
 logger = logging.getLogger(__name__)
@@ -120,8 +121,13 @@ class Service:
     Structures and signals, hub-wide facts about its data, each declared on its own. No actions.
     """
 
-    def __init__(self, name: str, *, identifier: str | None = None, description: str | None = None, key: Any = None) -> None:
+    def __init__(self, name: str, *, identifier: str | None = None, description: str | None = None, key: Any = None, hosts: Hosts | None = None) -> None:
         self.name = name
+        #: What the service's contract says it hosts (``contract.description.hosts``). With it,
+        #: this object declares nothing: :meth:`structure` and :meth:`signal` bind what is said
+        #: there to the models and the code, and refuse anything it does not say. Without it (a
+        #: process that is no service of a hub's contract), they are the declaration.
+        self.hosts = hosts
         #: The key this service signs with; None (the rule) = this instance's key
         #: (``settings.INSTANCE``). Set when one process plays several services (tests).
         self.key = key
@@ -139,7 +145,7 @@ class Service:
         model: Any,
         identifier: str,
         *,
-        descriptors: Iterable[Descriptor | str] = (),
+        descriptors: Iterable[Descriptor | str] | None = None,
         describe: Callable[[Any], dict[str, Any]] | None = None,
         label: str | None = None,
         description: str | None = None,
@@ -153,13 +159,25 @@ class Service:
 
         Hosting announces nothing. Whether saves and deletes of the model are signalled is a
         separate declaration.
+
+        For a service with a contract (``hosts``), the structure is declared there and this
+        binds it: ``structure(model, identifier, describe=...)`` and nothing else.
         """
         check_identifier(identifier)
-        declared_descriptors = tuple(d if isinstance(d, Descriptor) else Descriptor(d) for d in descriptors)
-        if len({d.key for d in declared_descriptors}) != len(declared_descriptors):
-            raise ValueError(f"The structure {identifier!r} declares a descriptor key twice")
-        if label is None and hasattr(model, "_meta"):
-            label = str(model._meta.verbose_name).title()
+        if self.hosts is not None:
+            said = self.hosts.structure(identifier)
+            if said is None:
+                raise ValueError(f"{self.name}'s contract hosts no structure {identifier!r}: declare it there (`hosts`), where the hub reads it")
+            if descriptors is not None or label is not None or description is not None:
+                raise ValueError(f"What the structure {identifier!r} is and carries is said in {self.name}'s contract, once: here it is only bound to its model")
+            declared_descriptors = tuple(Descriptor(d.key, d.type, d.description) for d in said.descriptors)
+            label, description = said.label, said.description
+        else:
+            declared_descriptors = tuple(d if isinstance(d, Descriptor) else Descriptor(d) for d in descriptors or ())
+            if len({d.key for d in declared_descriptors}) != len(declared_descriptors):
+                raise ValueError(f"The structure {identifier!r} declares a descriptor key twice")
+            if label is None and hasattr(model, "_meta"):
+                label = str(model._meta.verbose_name).title()
 
         declared = Structure(identifier, model, label, description, declared_descriptors, describe)
         existing = self._structures.get(identifier)
@@ -194,13 +212,21 @@ class Service:
 
     # --- announcing ----------------------------------------------------------------------
 
-    def signal(self, identifier: str, *, kinds: Iterable[str] = ("CREATED",), descriptors: Iterable[str] = (), description: str | None = None) -> Signal:
+    def signal(self, identifier: str, *, kinds: Iterable[str] | None = None, descriptors: Iterable[str] | None = None, description: str | None = None) -> Signal:
         """Declare that this service emits ``kinds`` of ``identifier`` objects with these descriptor keys.
 
         The handle's ``emit`` sends one. For a hosted model whose every save and delete is to be
         announced, :meth:`model_signal` declares the signal and sends it by itself.
         """
-        kinds = tuple(kinds)
+        if self.hosts is not None:
+            said = self.hosts.signal(identifier)
+            if said is None:
+                raise ValueError(f"{self.name}'s contract announces no signal {identifier!r}: declare it there (`hosts`), where the hub reads it")
+            if kinds is not None or descriptors is not None or description is not None:
+                raise ValueError(f"What the signal {identifier!r} announces is said in {self.name}'s contract, once: here it is only sent")
+            kinds, descriptors, description = said.kinds, said.descriptors, said.description
+        kinds = tuple(kinds if kinds is not None else ("CREATED",))
+        descriptors = tuple(descriptors or ())
         bad = [k for k in kinds if k not in KINDS]
         if bad or not kinds:
             raise ValueError(f"A signal kind is one of {KINDS}, not {bad or 'nothing'}")
@@ -219,9 +245,9 @@ class Service:
         structure: Structure | Any,
         *,
         organization: Callable[[Any], str | None],
-        kinds: Iterable[str] = KINDS,
+        kinds: Iterable[str] | None = None,
         when: Callable[[Any, str], bool] | None = None,
-        descriptors: Iterable[str] = (),
+        descriptors: Iterable[str] | None = None,
         description: str | None = None,
     ) -> Signal:
         """Declare that every save and delete of a hosted structure's model is signalled.
@@ -251,7 +277,15 @@ class Service:
         if hosted is None or self._structures.get(hosted.identifier) is not hosted:
             raise ValueError(f"{structure!r} is not a structure this service hosts; declare it with service.structure first")
         identifier, model, describe = hosted.identifier, hosted.model, hosted.describer
-        handle = self.signal(identifier, kinds=kinds, descriptors=(*hosted.keys, *descriptors), description=description)
+        if self.hosts is not None:
+            # Said in the contract, with the keys it carries. It has to carry the structure's
+            # own: they are what is computed for every save.
+            handle = self.signal(identifier, kinds=kinds, descriptors=descriptors, description=description)
+            missing = [key for key in hosted.keys if key not in handle.declaration.descriptors]
+            if missing:
+                raise ValueError(f"The signal {identifier!r} is sent with its structure's descriptors, and {self.name}'s contract leaves out {', '.join(missing)}")
+        else:
+            handle = self.signal(identifier, kinds=kinds if kinds is not None else KINDS, descriptors=(*hosted.keys, *(descriptors or ())), description=description)
 
         uid = f"rekuest_service:{self.name}:{identifier}"
 
@@ -272,6 +306,25 @@ class Service:
 
     # --- what rekuest reads --------------------------------------------------------------
 
+    def unbound(self) -> list[str]:
+        """What the contract says this service hosts or announces, and nothing here stands behind."""
+        if self.hosts is None:
+            return []
+        return [
+            *(f"structure {s.identifier}" for s in self.hosts.structures if s.identifier not in self._structures),
+            *(f"signal {s.identifier}" for s in self.hosts.signals if s.identifier not in self._signals),
+        ]
+
+    def check(self) -> None:
+        """Refuse to start as a service whose contract promises what its code does not hold.
+
+        A hub is told what the image hosts before the service runs; a structure with no model
+        behind it, or a signal nothing sends, would be a promise no object ever keeps.
+        """
+        unbound = self.unbound()
+        if unbound:
+            raise RuntimeError(f"{self.name}'s contract declares {', '.join(unbound)}, and its service binds none of it: bind it (service.structure, service.signal) or take it out of the contract")
+
     def manifest(self) -> dict[str, Any]:
         return {
             "service": self.service_name(),
@@ -287,6 +340,7 @@ class Service:
         """The ``_rekuest/service`` endpoint (the manifest), bound to this service. Mount it in ``urls.py``."""
         from arkitekt_service.service.views import urlpatterns_for
 
+        self.check()
         return urlpatterns_for(self)
 
     # --- configuration and sending -------------------------------------------------------
