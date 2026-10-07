@@ -116,8 +116,10 @@ def redeem(hub: Hub, service: str, *, app: str = "smoke") -> str:
 
 def _restarts(running: ServiceHub) -> int | None:
     """How often the service's container was restarted, when Docker says."""
-    container = f"{running.hub.directory.name}-{running.service}-1"
-    said = subprocess.run(["docker", "inspect", "-f", "{{.RestartCount}}", container], capture_output=True, text=True, check=False)
+    containers = running.hub.ps(services=[running.service])
+    if not containers:
+        return None
+    said = subprocess.run(["docker", "inspect", "-f", "{{.RestartCount}}", containers[0].name], capture_output=True, text=True, check=False)
     return int(said.stdout.strip()) if said.returncode == 0 and said.stdout.strip().isdigit() else None
 
 
@@ -131,8 +133,8 @@ def check_service(running: ServiceHub, *, admin: bool = True) -> None:
     - it did not restart on the way.
     """
     hub, service = running.hub, running.service
-    not_ready = [endpoint for endpoint in hub.wait(timeout=180) if not endpoint.ready]
-    assert not not_ready, f"not ready: {', '.join(endpoint.name for endpoint in not_ready)}\n{hub.logs(service)}"
+    not_ready = [endpoint for endpoint in hub.wait_ready(180) if not endpoint.ready]
+    assert not not_ready, f"not ready: {', '.join(endpoint.name for endpoint in not_ready)}\n{hub.logs(service).stdout}"
 
     with urllib.request.urlopen(hub.services[service].health_url, timeout=30) as health:
         assert health.status == 200
@@ -148,7 +150,7 @@ def check_service(running: ServiceHub, *, admin: bool = True) -> None:
         hub.superuser(service, "smoke", "smoke-pass-1")
 
     restarts = _restarts(running)
-    assert not restarts, f"{service} restarted {restarts} time(s) before it served:\n{hub.logs(service)}"
+    assert not restarts, f"{service} restarted {restarts} time(s) before it served:\n{hub.logs(service).stdout}"
 
 
 @pytest.fixture(scope="session")
@@ -163,7 +165,9 @@ def service_image(pytestconfig: pytest.Config) -> str:
 @pytest.fixture(scope="session")
 def service_hub(request: pytest.FixtureRequest, service_image: str) -> Iterator[ServiceHub]:
     """A hub for the session that runs the image under test, and a coordination server."""
-    pytest.importorskip("konstruktor", reason="the hub is made by konstruktor: pip install konstruktor")
+    konstruktor = pytest.importorskip("konstruktor", reason="the hub is made by konstruktor: pip install konstruktor")
+    if not hasattr(konstruktor, "testing_hub"):
+        pytest.skip("the hub is made by konstruktor 0.17 or newer, and an older one is installed: pip install -U konstruktor")
     make = request.getfixturevalue("konstruktor_hub")
     hub: Hub = make(service_images=[service_image], redeem_tokens=4)
     services = [name for name in hub.services if name != "lok"]
