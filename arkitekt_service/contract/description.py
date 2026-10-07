@@ -61,10 +61,7 @@ class Needs(Said):
     def _databases_are_named_as_postgres_names_them(cls, names: list[str]) -> list[str]:
         for name in names:
             if not PLAIN_NAME.fullmatch(name) or len(name) > POSTGRES_NAME_LENGTH:
-                raise ValueError(
-                    f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase "
-                    f"letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most"
-                )
+                raise ValueError(f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most")
         if len(set(names)) != len(names):
             raise ValueError(f"a database is named twice: {', '.join(sorted({n for n in names if names.count(n) > 1}))}")
         return names
@@ -107,7 +104,9 @@ class Description(Said):
     """A service, as its image describes it."""
 
     contract: Literal[2] = Field(default=2, description="The version of this contract.")
-    name: str = Field(description="The service's name: what a hub calls it, its path at the gateway, and the first half of its databases' names. Lowercase letters, digits and underscores, starting with a letter: no hyphen.")
+    name: str = Field(
+        description="The service's name: what a hub calls it, its path at the gateway, and the first half of its databases' names. Lowercase letters, digits and underscores, starting with a letter: no hyphen."
+    )
     identifier: str = Field(description="What the service is registered as at the coordination server, and what a client asks for: `live.arkitekt.mikro`.")
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
@@ -152,4 +151,3 @@ class Description(Said):
             if len(called) > POSTGRES_NAME_LENGTH:
                 raise ValueError(f"`{called}` is longer than the {POSTGRES_NAME_LENGTH} characters Postgres keeps of a name")
         return self
-
