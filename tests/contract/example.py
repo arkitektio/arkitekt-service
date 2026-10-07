@@ -49,11 +49,12 @@ class Settings(BaseSettings):
 
 
 def render(facts: Facts) -> dict[str, JSON]:
-    if facts.database is None:
+    database = facts.databases.get("main")
+    if database is None:
         raise Refused("it needs a database, and this hub gives it none")
     document: dict[str, JSON] = {
         "django": {"secret_key": facts.me.secret_key, "debug": facts.me.debug, "force_script_name": facts.me.path},
-        "postgres": {"host": facts.database.host, "db_name": facts.database.name, "password": facts.database.password},
+        "postgres": {"host": database.host, "db_name": database.name, "password": database.password},
     }
     agents = facts.offering("agent")
     if agents:

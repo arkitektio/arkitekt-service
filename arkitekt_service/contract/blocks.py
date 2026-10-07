@@ -8,6 +8,7 @@ what is its own. A release that spells one of them differently writes that block
 from __future__ import annotations
 
 from arkitekt_service.contract.contract import Refused
+from arkitekt_service.contract.description import MAIN_DATABASE
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
 
@@ -28,11 +29,11 @@ def django(facts: Facts) -> dict[str, JSON]:
     }
 
 
-def postgres(facts: Facts) -> dict[str, JSON]:
-    """``postgres``: the service's database."""
-    if facts.database is None:
-        raise Refused("it needs a database, and this hub gives it none")
-    database = facts.database
+def postgres(facts: Facts, name: str = MAIN_DATABASE) -> dict[str, JSON]:
+    """``postgres``: one of the service's databases, by the name it asked for it under."""
+    database = facts.databases.get(name)
+    if database is None:
+        raise Refused(f"it needs a database called `{name}`, and this hub gives it none")
     return {"host": database.host, "port": database.port, "db_name": database.name, "username": database.username, "password": database.password}
 
 

@@ -57,6 +57,11 @@ What the description says:
 - `identifier`: what the service is registered as, and what a client asks for.
 - `needs`, `offers`, `requires`: what a hub has to provide, and what other services are
   wired to.
+- `needs.databases`: the databases it wants in the hub's Postgres, by name (`main` unless it
+  says otherwise). A hub calls each `<service>_<name>` and hands it over under the name the
+  service gave: `blocks.postgres(facts, "events")`. A name is one Postgres takes unquoted
+  (a lowercase letter, then lowercase letters, digits and underscores); anything else is
+  refused when the service is declared.
 - `serve` and `debug`: what a container of the image runs to serve, in production and in
   development. An installer writes the one that applies as the service's command.
 - `jobs`: what can be run in the image beside its start, by name, each with the command that

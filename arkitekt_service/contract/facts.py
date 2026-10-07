@@ -52,7 +52,7 @@ class Hub(Fact):
 
 
 class Database(Fact):
-    """The service's own database in the hub's Postgres."""
+    """One of the service's own databases in the hub's Postgres."""
 
     host: str
     port: int = 5432
@@ -111,7 +111,7 @@ class Facts(Fact):
     facts: Literal[1] = Field(default=1, description="The version of this document.")
     me: Me
     hub: Hub
-    database: Database | None = None
+    databases: dict[str, Database] = Field(default_factory=dict, description="The service's databases, by the name it asked for each under (`needs.databases`).")
     redis: Redis | None = None
     storage: Storage | None = None
     instance: Instance | None = None

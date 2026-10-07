@@ -8,9 +8,22 @@ coordination server about it, which of its endpoints other services are wired to
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+#: The database every service has unless it says otherwise.
+MAIN_DATABASE = "main"
+
+#: A name Postgres takes as it is written: a lowercase letter, then lowercase letters, digits
+#: and underscores. Nothing that would have to be quoted, so that whoever creates the database
+#: can say its name anywhere without escaping it.
+DATABASE_NAME = re.compile(r"[a-z][a-z0-9_]*")
+
+#: How long a Postgres name may be (``NAMEDATALEN`` - 1). A hub calls a service's database
+#: ``<service>_<name>``, so the name a service picks has to leave room for its own.
+POSTGRES_NAME_LENGTH = 63
 
 
 class Said(BaseModel):
@@ -29,7 +42,10 @@ class Scope(Said):
 class Needs(Said):
     """What the service needs a hub to provide."""
 
-    database: bool = True
+    databases: list[str] = Field(
+        default_factory=lambda: [MAIN_DATABASE],
+        description="A database for each of these names, in the hub's Postgres. The hub calls each `<service>_<name>`; the service is handed them by the name it gave. Empty for a service that keeps nothing in Postgres.",
+    )
     redis: bool = True
     storage: list[str] = Field(default_factory=list, description="A bucket for each of these purposes (media, zarr, parquet, bigfile, …).")
     instance_key: bool = Field(default=False, description="A key of its own, vouched for by the hub: it signs or verifies requests between services.")
@@ -38,6 +54,19 @@ class Needs(Said):
     secrets: list[str] = Field(default_factory=list, description="Key files it needs mounted, by name (fernet).")
     scopes: list[Scope] = Field(default_factory=list)
     roles: list[Scope] = Field(default_factory=list)
+
+    @field_validator("databases")
+    @classmethod
+    def _databases_are_named_as_postgres_names_them(cls, names: list[str]) -> list[str]:
+        for name in names:
+            if not DATABASE_NAME.fullmatch(name) or len(name) > POSTGRES_NAME_LENGTH:
+                raise ValueError(
+                    f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase "
+                    f"letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most"
+                )
+        if len(set(names)) != len(names):
+            raise ValueError(f"a database is named twice: {', '.join(sorted({n for n in names if names.count(n) > 1}))}")
+        return names
 
 
 class Offers(Said):

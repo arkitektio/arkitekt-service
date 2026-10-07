@@ -14,7 +14,7 @@ from arkitekt_service.contract import cli
 FACTS = {
     "me": {"name": "example", "path": "example", "url": "http://example:80/example", "identifier": "live.arkitekt.example", "secret_key": "s3cret"},
     "hub": {"auth": {"issuers": []}},
-    "database": {"host": "db", "name": "example", "username": "hub", "password": "pw"},
+    "databases": {"main": {"host": "db", "name": "example_main", "username": "hub", "password": "pw"}},
     "peers": {"rekuest": {"url": "http://rekuest:80/rekuest", "offers": {"agent": "http://rekuest-takt:8080/rekuest"}}},
 }
 
@@ -55,7 +55,7 @@ def test_render_writes_the_releases_config_from_the_hubs_facts(tmp_path: Path, c
     assert cli.main(["render", "--facts", str(facts), "--overrides", str(tmp_path / "none.yaml")]) == 0
 
     config = yaml.safe_load(capsys.readouterr().out)
-    assert config["postgres"] == {"host": "db", "db_name": "example", "password": "pw"}
+    assert config["postgres"] == {"host": "db", "db_name": "example_main", "password": "pw"}
     assert config["django"]["force_script_name"] == "example"
     # Wired to a peer by what the peer offers, not by a name the installer knew.
     assert config["rekuest_hook"] == {"rekuest_url": "http://rekuest-takt:8080/rekuest"}
@@ -90,7 +90,7 @@ def test_an_override_this_release_does_not_read_is_refused_by_name(tmp_path: Pat
 
 
 def test_facts_the_release_cannot_be_configured_from_are_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    without_database = {key: value for key, value in FACTS.items() if key != "database"}
+    without_database = {key: value for key, value in FACTS.items() if key != "databases"}
     assert cli.main(["render", "--facts", str(written(tmp_path, "facts.yaml", without_database))]) == cli.REFUSED
     assert "it needs a database" in capsys.readouterr().err
 
@@ -344,3 +344,36 @@ def test_standalone_serves_nothing_on_a_database_it_could_not_prepare(monkeypatc
     monkeypatch.setattr(cli, "become", lambda start: pytest.fail("served on a database that was not prepared"))
 
     assert cli.main(["standalone"]) == 3
+
+
+def test_a_service_has_one_database_unless_it_names_others() -> None:
+    from arkitekt_service.contract import Needs
+
+    assert Needs().databases == ["main"]
+    assert Needs(databases=["main", "events"]).databases == ["main", "events"]
+    assert Needs(databases=[]).databases == [], "a service that keeps nothing in Postgres"
+
+
+@pytest.mark.parametrize("name", ["Main", "my-db", "1st", "with space", 'drop"table', "", "ümlaut", "a" * 64])
+def test_a_database_name_postgres_would_have_to_quote_is_refused(name: str) -> None:
+    from arkitekt_service.contract import Needs
+
+    with pytest.raises(ValueError, match="not a name Postgres takes unquoted"):
+        Needs(databases=[name])
+
+
+def test_a_database_cannot_be_named_twice() -> None:
+    from arkitekt_service.contract import Needs
+
+    with pytest.raises(ValueError, match="named twice: main"):
+        Needs(databases=["main", "main"])
+
+
+def test_a_block_is_written_for_the_database_asked_for_by_name() -> None:
+    from arkitekt_service.contract import Facts, Refused, blocks
+
+    facts = Facts.model_validate({**FACTS, "databases": {**FACTS["databases"], "events": {"host": "db", "name": "example_events", "username": "hub", "password": "pw"}}})
+    assert blocks.postgres(facts)["db_name"] == "example_main"
+    assert blocks.postgres(facts, "events")["db_name"] == "example_events"
+    with pytest.raises(Refused, match="called `archive`"):
+        blocks.postgres(facts, "archive")
