@@ -156,3 +156,23 @@ def test_something_that_is_no_version_is_refused(config, monkeypatch: pytest.Mon
     _declaring(monkeypatch, {6: lambda: None})
     with pytest.raises(CommandError, match="not a version"):
         call_command("upgrade", "--from", "latest", "--to", "6.0.0")
+
+
+@pytest.mark.django_db
+def test_a_service_can_prove_what_its_migrate_job_does(config, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The three checks a service's suite makes of its own contract."""
+    import dataclasses
+
+    from arkitekt_service import prepared
+    from arkitekt_service.contract import Job
+
+    from tests.server import served
+
+    declared = dataclasses.replace(served.contract, jobs={"ensureadmin": Job(("ensureadmin",))}, setup=("ensureadmin",))
+    prepared.migrations_are_committed()
+    prepared.jobs_are_commands(declared)
+    prepared.setup_runs_again(declared)
+    assert get_user_model().objects.filter(username="operator").count() == 1
+
+    with pytest.raises(AssertionError, match="reindex"):
+        prepared.jobs_are_commands(dataclasses.replace(served.contract, jobs={"reindex": Job(("reindex",))}))

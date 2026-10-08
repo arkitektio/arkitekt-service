@@ -31,7 +31,7 @@ Locally (`deployments/next`) a service runs `arkitekt-service standalone --debug
 ### Migrations
 
 1. **A model change and its migration are one commit.** `python manage.py makemigrations
-   --check --dry-run` must be clean; CI runs it.
+   --check --dry-run` must be clean; the service's `tests/test_prepared.py` asserts it.
 2. **Never migrate, seed or repair at start, in `ready()`, or in a request.** It goes into a
    migration, a setup job or an upgrade.
 3. **Within a major, a migration leaves a schema the previous release still runs on.** That is
@@ -83,4 +83,4 @@ Locally (`deployments/next`) a service runs `arkitekt-service standalone --debug
 - [ ] existing rows rewritten: an upgrade into the next major, re-runnable, with a test
 - [ ] new command: declared as a job with a summary, or not added
 - [ ] the service's `CLAUDE.md` lists the job
-- [ ] `arkitekt-service run migrate` twice against a real database: both exit 0
+- [ ] `tests/test_prepared.py` (`arkitekt_service.prepared`) passes: migrations committed, every job a command, setup re-runnable
