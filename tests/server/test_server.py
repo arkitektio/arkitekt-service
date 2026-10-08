@@ -108,56 +108,6 @@ def test_a_process_that_is_no_service_is_not_judged(monkeypatch: pytest.MonkeyPa
     assert [message for message in run_checks() if (message.id or "").startswith("arkitekt.")] == []
 
 
-def _declaring(monkeypatch: pytest.MonkeyPatch, upgrades: dict) -> None:
-    import dataclasses
-
-    from tests.server import served
-
-    monkeypatch.setattr(served, "contract", dataclasses.replace(served.contract, upgrades=upgrades))
-
-
-def test_a_move_runs_the_upgrades_of_every_major_it_crosses_into_in_order(config, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """From 5 to 7 is the upgrade into 6, then the one into 7; the one into 8 is not its."""
-    ran: list[int] = []
-    _declaring(monkeypatch, {7: lambda: ran.append(7), 6: lambda: ran.append(6), 8: lambda: ran.append(8)})
-
-    call_command("upgrade", "--from", "5.2.0", "--to", "7.0.1")
-
-    assert ran == [6, 7]
-    assert "6, 7" in capsys.readouterr().out
-
-
-def test_a_move_within_a_major_or_back_runs_nothing(config, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    ran: list[int] = []
-    _declaring(monkeypatch, {6: lambda: ran.append(6)})
-
-    call_command("upgrade", "--from", "6.0.0", "--to", "6.3.1")
-    call_command("upgrade", "--from", "6.0.0", "--to", "5.2.0")
-
-    assert ran == []
-    assert "Nothing to upgrade" in capsys.readouterr().out
-
-
-def test_an_upgrade_that_fails_fails_the_command(config, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The installer has to hear it: the previous server is started again on a non-zero exit."""
-
-    def broken() -> None:
-        raise RuntimeError("row 3 has no organization")
-
-    _declaring(monkeypatch, {6: broken})
-    with pytest.raises(RuntimeError, match="row 3"):
-        call_command("upgrade", "--from", "5.2.0", "--to", "6.0.0")
-
-
-def test_something_that_is_no_version_is_refused(config, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A label the installer could not read is not guessed at."""
-    from django.core.management.base import CommandError
-
-    _declaring(monkeypatch, {6: lambda: None})
-    with pytest.raises(CommandError, match="not a version"):
-        call_command("upgrade", "--from", "latest", "--to", "6.0.0")
-
-
 @pytest.mark.django_db
 def test_a_service_can_prove_what_its_migrate_job_does(config, monkeypatch: pytest.MonkeyPatch) -> None:
     """The three checks a service's suite makes of its own contract."""

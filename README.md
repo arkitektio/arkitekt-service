@@ -4,7 +4,7 @@ What a service of an [Arkitekt](https://arkitekt.live) hub is made with. Its par
 
 | | |
 |---|---|
-| `arkitekt_service.contract` | What the service's **image** answers the hub's installer: what it needs, its own config written from the hub's facts, its migrations and upgrades. |
+| `arkitekt_service.contract` | What the service's **image** answers the hub's installer: what it needs, its own config written from the hub's facts, its migrations and jobs. |
 | `arkitekt_service.service` | What the service **is** to the hub's rekuest: the structures it hosts and the signals it emits. |
 | `arkitekt_service.hook` | What can be **done** in its process: a HookAgent, whose actions rekuest reaches over HTTP. |
 | `arkitekt_service.server` | What every service is as a **Django server**: the settings blocks they all spell alike, `ensureadmin`, `validate_settings`. |
@@ -27,7 +27,7 @@ arkitekt-service                      # what it is, needs and offers, and what t
 arkitekt-service serve                # become the service: serve, and nothing else
 arkitekt-service debug                # the same, with the development server
 arkitekt-service run migrate          # bring its database to this release, then its setup
-arkitekt-service run <job>            # any other job it offers: plan, superuser, upgrade, its own
+arkitekt-service run <job>            # any other job it offers: plan, superuser, its own
 arkitekt-service standalone           # run migrate, then serve: one image, run on its own
 arkitekt-service render               # this release's config, from the hub's facts
 arkitekt-service check                # does this release read a config as written?
@@ -141,9 +141,7 @@ contract = Contract(
 )
 ```
 
-What a release does to existing data on the way into a major is declared the same way,
-`upgrades={6: upgrades.into_six}`, and run by `arkitekt-service run upgrade --from A --to B`.
-The rules a migration, a job and an upgrade are held to, so that an installer can update a
+The rules a migration and a job are held to, so that an installer can update a
 running hub and put it back, are in [docs/migrations-and-jobs.md](docs/migrations-and-jobs.md).
 
 The hub's facts (`arkitekt_service.contract.facts`) and a service's description

@@ -71,8 +71,6 @@ def jobs_are_commands(contract: Contract) -> None:
     """Every job the contract offers names a ``manage.py`` command this service has."""
     known = get_commands()
     missing = {name: job.manage[0] for name, job in contract.jobs.items() if job.manage[0] not in known}
-    if contract.upgrades and "upgrade" not in known:
-        missing["upgrade"] = "upgrade"
     assert not missing, f"jobs that name a command this service does not have: {missing}"
 
 

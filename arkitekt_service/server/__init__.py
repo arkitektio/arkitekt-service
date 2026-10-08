@@ -12,7 +12,6 @@ It brings
 - ``manage.py ensureadmin``: the operator account the config names;
 - ``manage.py validate_settings``: the config as this release reads it, secrets masked, and what
   it says that the release does not read (``--strict`` fails on that);
-- ``manage.py upgrade``: the upgrades the service's contract declares, between two versions;
 - a system check, run by ``migrate``, that warns about the same.
 
 The commands and the check find the service's settings through its contract

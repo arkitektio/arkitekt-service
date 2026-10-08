@@ -10,7 +10,6 @@ image tells it: one entry point (``arkitekt-service <verb>``), the same in every
 ``render``      this release's config, written from the hub's facts
 ``check``       whether this release reads a config as written
 ``migrate``     the release's database migrations, as a step with an answer
-``upgrade``     what the release does to its data between two versions
 ==============  ================================================================
 
 A service declares itself once, in a module named by ``ARKITEKT_SERVICE`` (set in its image)::
@@ -26,7 +25,6 @@ from arkitekt_service.contract.contract import Contract, Job, Refused, Start
 from arkitekt_service.contract.description import Description, Descriptor, Hosts, Needs, Offers, Scope, Sidecar, Signal, Source, Structure
 from arkitekt_service.contract.facts import Facts, Peer
 from arkitekt_service.contract.json_types import JSON
-from arkitekt_service.contract.upgrades import Upgrade
 
 __all__ = [
     "JSON",
@@ -46,6 +44,5 @@ __all__ = [
     "Source",
     "Start",
     "Structure",
-    "Upgrade",
     "blocks",
 ]

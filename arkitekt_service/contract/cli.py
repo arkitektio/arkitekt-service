@@ -27,8 +27,8 @@
     installer runs it once per build, before the first start and before an update's — which
     is why a service's own start does nothing but serve. ``plan`` lists the migrations that
     would run and runs nothing; ``superuser`` creates an account for the service's admin from
-    ``DJANGO_SUPERUSER_USERNAME``, ``_PASSWORD`` and ``_EMAIL``; ``upgrade --from A --to B`` is what a release does to its data
-    between two versions, if it ships anything of the kind; the rest are the service's own.
+    ``DJANGO_SUPERUSER_USERNAME``, ``_PASSWORD`` and ``_EMAIL``; the rest are the
+    service's own.
 
 ``standalone [--debug]``
     ``run migrate``, then ``serve`` (or ``debug``): the whole of it, for whoever runs one image
@@ -55,7 +55,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from arkitekt_service.contract.contract import MIGRATE, PLAN, SUPERUSER, UPGRADE, Contract, Refused, Start, load
+from arkitekt_service.contract.contract import MIGRATE, PLAN, SUPERUSER, Contract, Refused, Start, load
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
@@ -188,8 +188,6 @@ def run(contract: Contract, name: str, extra: Sequence[str]) -> int:
         # From the environment, which is what `--noinput` reads: a password on a command
         # line is visible to every process on the machine for as long as it runs.
         return manage("createsuperuser", "--noinput", *extra)
-    if name == UPGRADE and contract.upgrades:
-        return manage("upgrade", *extra)
     declared = contract.jobs.get(name)
     if declared is None:
         offered = ", ".join(contract.said().jobs)

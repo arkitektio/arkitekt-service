@@ -214,7 +214,7 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pyt
     assert said["prepare"] == "migrate"
     assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
     assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "run", "ensureadmin"], "summary": "Create the operator account", "includes": []}
-    # `plan` is every service's; `upgrade` is only there for a release that ships one.
+    # `plan` is every service's.
     assert set(said["jobs"]) == {"migrate", "plan", "superuser", "ensureadmin", "ensurerepos", "reindex"}
     assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "run", "plan"]
     assert said["render"] == ["arkitekt-service", "render"]
@@ -250,8 +250,6 @@ def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pyt
 
     assert cli.main(["run", "nope"]) == cli.REFUSED
     assert "migrate, plan, superuser, ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
-    # An upgrade is only a job of a release that ships one.
-    assert cli.main(["run", "upgrade", "--from", "1", "--to", "2"]) == cli.REFUSED
 
 
 def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
@@ -263,19 +261,9 @@ def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
 
     with pytest.raises(ValueError, match="ensureadmin"):
         dataclasses.replace(example.contract, setup=("ensureadmin",))
-    for reserved in ("migrate", "plan", "upgrade", "superuser"):
+    for reserved in ("migrate", "plan", "superuser"):
         with pytest.raises(ValueError, match=reserved):
             dataclasses.replace(example.contract, jobs={reserved: Job((reserved,))})
-
-
-def test_a_release_that_ships_an_upgrade_offers_it_as_a_job() -> None:
-    import dataclasses
-
-    from tests.contract import example
-
-    assert "upgrade" not in example.contract.said().jobs
-    shipped = dataclasses.replace(example.contract, upgrades={2: lambda: None}).said()
-    assert shipped.jobs["upgrade"].command == ["arkitekt-service", "run", "upgrade"]
 
 
 def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ Three parts, for three different things a service process does:
 
 :mod:`arkitekt_service.contract`
     What its *image* answers the hub's installer, before and around the service running: what
-    it needs, its own config written from the hub's facts, its migrations and upgrades.
+    it needs, its own config written from the hub's facts, its migrations and jobs.
     ``arkitekt-service <verb>``.
 
 :mod:`arkitekt_service.service`

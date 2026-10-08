@@ -13,7 +13,6 @@ from arkitekt_service.contract import description as described
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
-from arkitekt_service.contract.upgrades import Upgrade
 
 #: Names the module holding a service's ``contract``, in its image.
 ENVIRONMENT = "ARKITEKT_SERVICE"
@@ -35,14 +34,12 @@ class Refused(Exception):
 MIGRATE = "migrate"
 #: What that job would apply, listed and not applied.
 PLAN = "plan"
-#: What a release does to its data between two versions, for a service that ships it.
-UPGRADE = "upgrade"
 #: An account that may sign in to the service's admin, made from the environment
 #: (``DJANGO_SUPERUSER_USERNAME``, ``_PASSWORD``, ``_EMAIL``): never from the command line,
 #: where a password is visible to every process on the machine.
 SUPERUSER = "superuser"
 #: The jobs that are every service's own, and so cannot be declared by one.
-RESERVED = (MIGRATE, PLAN, UPGRADE, SUPERUSER)
+RESERVED = (MIGRATE, PLAN, SUPERUSER)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -88,10 +85,6 @@ class Contract:
     """What serves, and does nothing else (``arkitekt-service serve``)."""
     debug: Start
     """The same for development: the server that reloads on a change (``arkitekt-service debug``)."""
-    upgrades: Mapping[int, Upgrade] = dataclasses.field(default_factory=lambda: dict[int, Upgrade]())
-    """What the release does to its data on the way into a major, by that major:
-    ``{6: upgrades.into_six}`` (see :mod:`arkitekt_service.contract.upgrades`). A release that
-    declares any offers the ``upgrade`` job; one that declares none is not stopped for it."""
     jobs: Mapping[str, Job] = dataclasses.field(default_factory=lambda: dict[str, Job]())
     """What can be run in the image beside its start, by name: ``{"ensureadmin": Job(("ensureadmin",),
     "Create the operator account")}``."""
@@ -133,8 +126,6 @@ class Contract:
             ),
             **{name: described.Job(command=[*runner, "run", name], summary=job.summary) for name, job in self.jobs.items()},
         }
-        if self.upgrades:
-            jobs[UPGRADE] = described.Job(command=[*runner, "run", UPGRADE], summary="What this release does to its data between two versions: `--from A --to B`.")
         return self.description.model_copy(
             update={
                 "source": self._source(),
