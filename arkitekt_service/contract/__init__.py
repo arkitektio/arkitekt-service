@@ -26,5 +26,26 @@ from arkitekt_service.contract.contract import Contract, Job, Refused, Start
 from arkitekt_service.contract.description import Description, Descriptor, Hosts, Needs, Offers, Scope, Sidecar, Signal, Source, Structure
 from arkitekt_service.contract.facts import Facts, Peer
 from arkitekt_service.contract.json_types import JSON
+from arkitekt_service.contract.upgrades import Upgrade
 
-__all__ = ["JSON", "Contract", "Description", "Descriptor", "Facts", "Hosts", "Job", "Needs", "Offers", "Peer", "Refused", "Scope", "Sidecar", "Signal", "Source", "Start", "Structure", "blocks"]
+__all__ = [
+    "JSON",
+    "Contract",
+    "Description",
+    "Descriptor",
+    "Facts",
+    "Hosts",
+    "Job",
+    "Needs",
+    "Offers",
+    "Peer",
+    "Refused",
+    "Scope",
+    "Sidecar",
+    "Signal",
+    "Source",
+    "Start",
+    "Structure",
+    "Upgrade",
+    "blocks",
+]

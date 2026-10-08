@@ -13,6 +13,7 @@ from arkitekt_service.contract import description as described
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
+from arkitekt_service.contract.upgrades import Upgrade
 
 #: Names the module holding a service's ``contract``, in its image.
 ENVIRONMENT = "ARKITEKT_SERVICE"
@@ -87,8 +88,10 @@ class Contract:
     """What serves, and does nothing else (``arkitekt-service serve``)."""
     debug: Start
     """The same for development: the server that reloads on a change (``arkitekt-service debug``)."""
-    upgrades: bool = False
-    """Whether the release ships ``manage.py upgrade``."""
+    upgrades: Mapping[int, Upgrade] = dataclasses.field(default_factory=lambda: dict[int, Upgrade]())
+    """What the release does to its data on the way into a major, by that major:
+    ``{6: upgrades.into_six}`` (see :mod:`arkitekt_service.contract.upgrades`). A release that
+    declares any offers the ``upgrade`` job; one that declares none is not stopped for it."""
     jobs: Mapping[str, Job] = dataclasses.field(default_factory=lambda: dict[str, Job]())
     """What can be run in the image beside its start, by name: ``{"ensureadmin": Job(("ensureadmin",),
     "Create the operator account")}``."""

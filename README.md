@@ -141,6 +141,11 @@ contract = Contract(
 )
 ```
 
+What a release does to existing data on the way into a major is declared the same way,
+`upgrades={6: upgrades.into_six}`, and run by `arkitekt-service run upgrade --from A --to B`.
+The rules a migration, a job and an upgrade are held to, so that an installer can update a
+running hub and put it back, are in [docs/migrations-and-jobs.md](docs/migrations-and-jobs.md).
+
 The hub's facts (`arkitekt_service.contract.facts`) and a service's description
 (`arkitekt_service.contract.description`) are versioned documents; an image refuses facts it
 does not understand rather than dropping them.

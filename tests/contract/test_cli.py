@@ -274,7 +274,7 @@ def test_a_release_that_ships_an_upgrade_offers_it_as_a_job() -> None:
     from tests.contract import example
 
     assert "upgrade" not in example.contract.said().jobs
-    shipped = dataclasses.replace(example.contract, upgrades=True).said()
+    shipped = dataclasses.replace(example.contract, upgrades={2: lambda: None}).said()
     assert shipped.jobs["upgrade"].command == ["arkitekt-service", "run", "upgrade"]
 
 
