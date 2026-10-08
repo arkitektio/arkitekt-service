@@ -33,20 +33,21 @@ from pathlib import Path
 
 from django.apps import apps
 from django.core.management import call_command, get_commands
-from django.db.migrations.loader import MigrationLoader
+from django.test.utils import override_settings
 
 from arkitekt_service.contract.contract import Contract
 
 
 def own_apps() -> list[str]:
-    """The labels of the migrated apps that are the service's own code: the ones it can write a migration for.
+    """The labels of the apps with models that are the service's own code: the ones it can write a migration for.
 
     An installed package's models are that package's to migrate. One that is behind its own
     models (a swapped user model changes what its foreign keys point at) is nothing a service
-    can commit a migration for, and nothing it should be failed over.
+    can commit a migration for, and nothing it should be failed over. An app of the service's
+    own that has models and no migrations at all is held to them like any other: its tables
+    would never be made.
     """
-    migrated = MigrationLoader(None, ignore_no_migrations=True).migrated_apps
-    return sorted(app.label for app in apps.get_app_configs() if app.label in migrated and not {"site-packages", "dist-packages"} & set(Path(app.path).parts))
+    return sorted(app.label for app in apps.get_app_configs() if list(app.get_models()) and not {"site-packages", "dist-packages"} & set(Path(app.path).parts))
 
 
 def migrations_are_committed() -> None:
@@ -56,7 +57,11 @@ def migrations_are_committed() -> None:
         return
     said = io.StringIO()
     try:
-        call_command("makemigrations", *own, "--check", "--dry-run", stdout=said, stderr=said)
+        # A suite may build its tables from the models and switch the migrations off
+        # (`MIGRATION_MODULES`): the committed ones are still what a hub runs, so they are
+        # what is compared here.
+        with override_settings(MIGRATION_MODULES={}):
+            call_command("makemigrations", *own, "--check", "--dry-run", stdout=said, stderr=said)
     except SystemExit as stopped:
         if stopped.code:
             raise AssertionError(f"a model changed without its migration; run `python manage.py makemigrations` and commit it:\n{said.getvalue()}") from None

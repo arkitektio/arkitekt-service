@@ -183,4 +183,14 @@ def test_only_the_services_own_apps_are_held_to_their_migrations() -> None:
     from arkitekt_service import prepared
 
     own = prepared.own_apps()
+    assert "test_app" in own, "an app of our own with models is held to its migrations, even one that has none yet"
     assert "auth" not in own and "contenttypes" not in own
+
+
+@pytest.mark.django_db
+def test_a_suite_that_switches_migrations_off_is_still_held_to_the_committed_ones(settings) -> None:
+    """What a hub runs is the committed migrations, whatever a suite builds its tables from."""
+    from arkitekt_service import prepared
+
+    settings.MIGRATION_MODULES = {"test_app": None}
+    prepared.migrations_are_committed()
