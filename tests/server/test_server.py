@@ -176,3 +176,11 @@ def test_a_service_can_prove_what_its_migrate_job_does(config, monkeypatch: pyte
 
     with pytest.raises(AssertionError, match="reindex"):
         prepared.jobs_are_commands(dataclasses.replace(served.contract, jobs={"reindex": Job(("reindex",))}))
+
+
+def test_only_the_services_own_apps_are_held_to_their_migrations() -> None:
+    """An installed package's migrations are that package's to keep."""
+    from arkitekt_service import prepared
+
+    own = prepared.own_apps()
+    assert "auth" not in own and "contenttypes" not in own

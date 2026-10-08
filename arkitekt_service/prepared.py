@@ -29,17 +29,34 @@ The rules these hold a service to are in ``docs/migrations-and-jobs.md``.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
+from django.apps import apps
 from django.core.management import call_command, get_commands
+from django.db.migrations.loader import MigrationLoader
 
 from arkitekt_service.contract.contract import Contract
 
 
+def own_apps() -> list[str]:
+    """The labels of the migrated apps that are the service's own code: the ones it can write a migration for.
+
+    An installed package's models are that package's to migrate. One that is behind its own
+    models (a swapped user model changes what its foreign keys point at) is nothing a service
+    can commit a migration for, and nothing it should be failed over.
+    """
+    migrated = MigrationLoader(None, ignore_no_migrations=True).migrated_apps
+    return sorted(app.label for app in apps.get_app_configs() if app.label in migrated and not {"site-packages", "dist-packages"} & set(Path(app.path).parts))
+
+
 def migrations_are_committed() -> None:
-    """No model differs from what the committed migrations make of it."""
+    """No model of the service's own apps differs from what its committed migrations make of it."""
+    own = own_apps()
+    if not own:
+        return
     said = io.StringIO()
     try:
-        call_command("makemigrations", "--check", "--dry-run", stdout=said, stderr=said)
+        call_command("makemigrations", *own, "--check", "--dry-run", stdout=said, stderr=said)
     except SystemExit as stopped:
         if stopped.code:
             raise AssertionError(f"a model changed without its migration; run `python manage.py makemigrations` and commit it:\n{said.getvalue()}") from None
