@@ -6,6 +6,11 @@ objects carry (``descriptors``) and how to compute them (``describe``): the mani
 reads, the service's own ``descriptors`` GraphQL field and any signal declared for the structure
 all read it.
 
+Descriptors are stored on the object (:class:`~arkitekt_service.service.described.Described`),
+computed by ``describe`` whenever it is saved or restored, and read from there by everything
+else: a ``requires`` filter (:mod:`arkitekt_service.service.requires`), a signal, the
+``descriptors`` field. Nothing is computed only when asked.
+
 A structure only HAS descriptors, and declaring one announces nothing: what is signalled about it
 is a separate declaration (``Service.model_signal``). What an action requires of an input or
 provides with an output is said on that action's ports, in terms of these keys.
@@ -61,9 +66,13 @@ class Structure:
     def keys(self) -> tuple[str, ...]:
         return tuple(d.key for d in self.descriptors)
 
-    def describe(self, obj: Any) -> dict[str, Any]:
-        """The flat descriptor dict of ``obj`` — what signals for it carry and its ``descriptors`` field returns."""
+    def compute(self, obj: Any) -> dict[str, Any]:
+        """Run the describer on ``obj``: what is stored on it (``stored_descriptors``) when it is saved or restored."""
         return dict(self.describer(obj)) if self.describer is not None else {}
+
+    def describe(self, obj: Any) -> dict[str, Any]:
+        """The descriptors of ``obj`` as they are stored on it — what signals for it carry and its ``descriptors`` field returns."""
+        return dict(getattr(obj, "stored_descriptors", None) or {})
 
     def manifest(self) -> dict[str, Any]:
         return {"identifier": self.identifier, "label": self.label, "description": self.description, "descriptors": [d.manifest() for d in self.descriptors]}

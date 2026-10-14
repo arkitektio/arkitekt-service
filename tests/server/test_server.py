@@ -97,12 +97,16 @@ def test_an_open_block_passes_its_extras_on_unjudged(config, capsys: pytest.Capt
     assert "not read" not in capsys.readouterr().out
 
 
+# The model checks ask the database what it can default (`stored_descriptors`' db_default).
+@pytest.mark.django_db
 def test_migrate_warns_about_what_the_release_does_not_read(config) -> None:
     config({**CONFIG, "django": {**CONFIG["django"], "debgu": True}})
     warnings = [message for message in run_checks() if message.id == "arkitekt.W001"]
     assert [message.msg for message in warnings] == ["The configuration sets `django.debgu`, which this release does not read."]
 
 
+# The model checks ask the database what it can default (`stored_descriptors`' db_default).
+@pytest.mark.django_db
 def test_a_process_that_is_no_service_is_not_judged(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ARKITEKT_SERVICE", raising=False)
     assert [message for message in run_checks() if (message.id or "").startswith("arkitekt.")] == []

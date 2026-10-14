@@ -57,13 +57,24 @@ class TestDeclaration:
         with pytest.raises(ValueError, match="descriptor type"):
             Descriptor("@other/a", "NUMBER")
 
+    def test_a_model_that_cannot_keep_its_descriptors_cannot_declare_any(self):
+        from test_app.models import Part
+
+        other = Service("other")
+        with pytest.raises(ValueError, match="make it a Described"):
+            other.structure(Part, "@other/part", descriptors=["@other/a"])
+        assert other.structure(Part, "@other/part").descriptors == ()
+
 
 @pytest.mark.django_db(transaction=True)
 class TestDescribing:
     def test_objects_are_described_and_their_saves_are_not_announced(self, intake):
         made = Book.objects.create(shelf=Shelf.objects.create(name="host"))
         assert hosting.describe(made) == {"@hosting/on": "host"}
-        assert hosting.describe(made.shelf) == {"@hosting/n_books": 1}
+        # The shelf was saved before its book: what counts the book is restored by its writer.
+        assert hosting.describe(made.shelf) == {"@hosting/n_books": 0}
+        hosting.restore(made.shelf)
+        assert hosting.describe(Shelf.objects.get(pk=made.shelf.pk)) == {"@hosting/n_books": 1}
         assert intake.wait(1, timeout=0.5) == []
 
     def test_a_model_nobody_hosts_has_no_descriptors(self):

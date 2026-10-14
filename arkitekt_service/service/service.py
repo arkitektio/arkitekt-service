@@ -35,14 +35,17 @@ from __future__ import annotations
 import datetime
 import logging
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 
 from arkitekt_service.contract.description import Hosts
+from arkitekt_service.service.described import Described
+from arkitekt_service.service.requires import Constraint, requires_q
 from arkitekt_service.service.structures import Descriptor, Structure, check_identifier
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,25 @@ KINDS = ("CREATED", "UPDATED", "DELETED")
 
 #: 3: structures and signals only; a service's manifest lists no actions (2 still did).
 MANIFEST_VERSION = 3
+
+
+#: How many rows a restore of a queryset reads at once.
+RESTORE_BATCH = 500
+
+
+def _stored_now(instance: Any) -> dict[str, Any] | None:
+    """What the database holds for ``instance`` now: a restore after the save may have changed it. None when the row is gone."""
+    rows = list(type(instance)._base_manager.filter(pk=instance.pk).values_list("stored_descriptors", flat=True)[:1])
+    return dict(rows[0] or {}) if rows else None
+
+
+@dataclass(frozen=True)
+class Announced:
+    """How a structure's saves are signalled: what :meth:`Service.model_signal` was given."""
+
+    handle: Signal
+    organization: Callable[[Any], str | None]
+    when: Callable[[Any, str], bool] | None
 
 
 @dataclass(frozen=True)
@@ -137,6 +159,13 @@ class Service:
         self.description = description
         self._signals: dict[str, Signal] = {}
         self._structures: dict[str, Structure] = {}
+        self._announced: dict[str, Announced] = {}
+        #: Objects whose CREATED is queued for a commit that has not happened yet: a restore of
+        #: one adds no UPDATED, the CREATED reads what it stored.
+        self._creating: set[tuple[str, str]] = set()
+
+    #: The services mounted in this process (:attr:`urls`): what ``restore_descriptors`` restores.
+    mounted: ClassVar[list[Service]] = []
 
     # --- hosting -------------------------------------------------------------------------
 
@@ -159,6 +188,11 @@ class Service:
 
         Hosting announces nothing. Whether saves and deletes of the model are signalled is a
         separate declaration.
+
+        A model whose structure declares descriptors keeps them: it is a
+        :class:`~arkitekt_service.service.described.Described`, and binding it recomputes its
+        ``stored_descriptors`` on every save (``pre_save``). What a save does not see, the writer
+        restores (:meth:`restore`, :meth:`stamp`).
 
         For a service with a contract (``hosts``), the structure is declared there and this
         binds it: ``structure(model, identifier, describe=...)`` and nothing else.
@@ -188,8 +222,100 @@ class Service:
         other = next((s for s in self._structures.values() if s.model is model), None)
         if other is not None:
             raise ValueError(f"{model.__name__} is already hosted as {other.identifier!r}; a model is one structure")
+        if declared_descriptors and not (isinstance(model, type) and issubclass(model, Described)):
+            raise ValueError(
+                f"The structure {identifier!r} declares descriptors, so {getattr(model, '__name__', model)} keeps them: make it a Described (arkitekt_service.service.described), with a GIN index on stored_descriptors"
+            )
         self._structures[identifier] = declared
+        if declared_descriptors and describe is not None:
+            self._store_on_save(declared)
         return declared
+
+    def _store_on_save(self, declared: Structure) -> None:
+        from django.db.models.signals import post_save, pre_save
+
+        def store(sender: Any, instance: Any, raw: bool = False, **_: Any) -> None:
+            # A fixture states its own column. A row the database has not numbered yet is
+            # described once it is (below): before that, no relation of it can be read.
+            if raw or instance.pk is None:
+                return
+            # The structure of the row's own class: a polymorphic parent's save is its child's.
+            instance.stored_descriptors = self._computed(self.structure_for(instance) or declared, instance)
+
+        def store_inserted(sender: Any, instance: Any, created: bool = False, raw: bool = False, **_: Any) -> None:
+            if created and not raw and not instance.stored_descriptors:
+                self.restore(instance, emit=False)  # its CREATED signal reads what this stores
+
+        uid = f"rekuest_service:{self.name}:{declared.identifier}"
+        pre_save.connect(store, sender=declared.model, weak=False, dispatch_uid=f"{uid}:store")
+        post_save.connect(store_inserted, sender=declared.model, weak=False, dispatch_uid=f"{uid}:store-inserted")
+
+    @staticmethod
+    def _computed(declared: Structure, instance: Any) -> dict[str, Any]:
+        """The describer's answer, or what the row had when it raises: a save never fails because of it."""
+        try:
+            return declared.compute(instance)
+        except Exception as error:  # noqa: BLE001  whoever writes what was missing restores it
+            logger.warning("Could not describe %s %s; it keeps the descriptors it had: %s", declared.identifier, instance.pk, error)
+            return dict(getattr(instance, "stored_descriptors", None) or {})
+
+    def stamp(self, rows: Iterable[Any]) -> list[Any]:
+        """Describe rows about to be bulk-written (``bulk_create``, ``bulk_update`` with
+        ``stored_descriptors`` among the fields), which no ``pre_save`` sees. Returns them.
+
+        A row not yet inserted has no relations to read: when a describer reads one, the rows
+        are restored after the ``bulk_create`` (which hands back their keys) instead."""
+        stamped = list(rows)
+        for row in stamped:
+            declared = self.structure_for(row)
+            if declared is not None and declared.descriptors and declared.describer is not None:
+                row.stored_descriptors = self._computed(declared, row)
+        return stamped
+
+    def restore(self, target: Any, *, emit: bool = True) -> int:
+        """Recompute and store the descriptors of a row, or of every row of a queryset, as the database holds it.
+
+        For what a save of the row did not see: rows written after it that a descriptor counts,
+        a many-to-many change, a bulk write. A row whose descriptors changed is announced as
+        UPDATED when its structure's saves are signalled, unless ``emit`` is False (the setup
+        job: rekuest need not be up) or the row was created in the transaction that is still
+        open: its CREATED goes out at the commit and carries what is stored then, so it is
+        announced once. Returns how many rows changed.
+        """
+        from django.db.models import QuerySet
+
+        rows = target.iterator(chunk_size=RESTORE_BATCH) if isinstance(target, QuerySet) else (target,)
+        changed = 0
+        for given in rows:
+            declared = self.structure_for(given)
+            if declared is None or not declared.descriptors or declared.describer is None:
+                continue
+            # Described as the database holds it: the caller's instance may predate what was
+            # written since (a column updated in place, a relation it cached).
+            row = given if isinstance(target, QuerySet) else type(given)._base_manager.filter(pk=given.pk).first()
+            if row is None:
+                continue
+            values, before = self._computed(declared, row), row.stored_descriptors or {}
+            given.stored_descriptors = values
+            if values == before:
+                continue
+            type(row)._base_manager.filter(pk=row.pk).update(stored_descriptors=values)
+            changed += 1
+            announced = self._announced.get(declared.identifier)
+            if emit and announced is not None and (declared.identifier, str(row.pk)) not in self._creating:
+                self._emit_for(announced.handle, row, "UPDATED", announced.organization, _stored_now, announced.when, lazy=True)
+        return changed
+
+    def requires(self, model: Any, constraints: Sequence[Constraint], prefix: str = "") -> Q:
+        """The rows of ``model`` satisfying a port's ``requires``: one condition on their stored descriptors.
+
+        ``model`` may be a parent of several hosted models (a polymorphic base): every key one of
+        them declares can be asked. A key none of them declares is refused.
+        """
+        keys = {key for s in self._structures.values() if isinstance(s.model, type) and issubclass(s.model, model) for key in s.keys}
+        if not keys:
+            raise ValueError(f"{getattr(model, '__name__', model)} is no structure of {self.name} with descriptors: nothing can be required of it")
+        return requires_q(constraints, keys=keys, prefix=prefix)
 
     @property
     def structures(self) -> dict[str, Structure]:
@@ -258,15 +384,16 @@ class Service:
         kinds not listed are not sent. ``organization(obj)`` names the organization (its slug);
         ``when(obj, kind)`` may veto (privacy, half-written rows).
 
-        The signal carries the structure's descriptors, computed by its ``describe``.
-        ``descriptors`` names further keys only a hand-made ``emit`` carries: facts about the
-        event, not the object.
+        The signal carries the structure's descriptors as they are stored. ``descriptors``
+        names further keys only a hand-made ``emit`` carries: facts about the event, not the
+        object.
 
-        For saves, ``organization`` and ``describe`` run after the transaction commits, so they
-        see everything the request wrote after the row itself — provided it wrote them in one
-        transaction: outside one, "after the commit" is right after that save. A mutation whose
-        descriptors depend on rows written after the object belongs in ``transaction.atomic``.
-        For deletes they run at delete time, while the row still exists. The provenance token is
+        For saves, ``organization`` runs and the stored descriptors are read after the
+        transaction commits, so they see everything the request wrote after the row itself —
+        a :meth:`restore` included — provided it wrote them in one transaction: outside one,
+        "after the commit" is right after that save. A mutation whose descriptors depend on rows
+        written after the object belongs in ``transaction.atomic`` and restores the object
+        before it ends. For deletes they are read at delete time, from the row as it was. The provenance token is
         always read at save time. A raising callable costs one warning: saving never fails
         because of a signal. Bulk writes (``bulk_create``, ``update()``) send nothing — Django
         sends no ``post_save`` for them.
@@ -276,7 +403,11 @@ class Service:
         hosted = structure if isinstance(structure, Structure) else self.structure_for(structure)
         if hosted is None or self._structures.get(hosted.identifier) is not hosted:
             raise ValueError(f"{structure!r} is not a structure this service hosts; declare it with service.structure first")
-        identifier, model, describe = hosted.identifier, hosted.model, hosted.describer
+        identifier, model = hosted.identifier, hosted.model
+        # A save is described when it is sent, from the database: a restore after the save (rows
+        # written later, a many-to-many) is what it carries. A delete, from the row as it was.
+        stored = _stored_now if hosted.descriptors else None
+        as_deleted = hosted.describe if hosted.descriptors else None
         if self.hosts is not None:
             # Said in the contract, with the keys it carries. It has to carry the structure's
             # own: they are what is computed for every save.
@@ -291,13 +422,14 @@ class Service:
 
         def on_save(sender: Any, instance: Any, created: bool = False, raw: bool = False, **_: Any) -> None:
             if not raw:  # fixtures being loaded are not events
-                self._emit_for(handle, instance, "CREATED" if created else "UPDATED", organization, describe, when, lazy=True)
+                self._emit_for(handle, instance, "CREATED" if created else "UPDATED", organization, stored, when, lazy=True)
 
         def on_delete(sender: Any, instance: Any, **_: Any) -> None:
-            self._emit_for(handle, instance, "DELETED", organization, describe, when, lazy=False)
+            self._emit_for(handle, instance, "DELETED", organization, as_deleted, when, lazy=False)
 
         post_save.connect(on_save, sender=model, weak=False, dispatch_uid=f"{uid}:save")
         post_delete.connect(on_delete, sender=model, weak=False, dispatch_uid=f"{uid}:delete")
+        self._announced[identifier] = Announced(handle, organization, when)
         return handle
 
     @property
@@ -341,6 +473,8 @@ class Service:
         from arkitekt_service.service.views import urlpatterns_for
 
         self.check()
+        if self not in Service.mounted:
+            Service.mounted.append(self)
         return urlpatterns_for(self)
 
     # --- configuration and sending -------------------------------------------------------
@@ -394,7 +528,7 @@ class Service:
             return
         self._emit(kind, handle.identifier, instance.pk, organization=org, descriptors=values)
 
-    def _emit(self, kind: str, identifier: str, object: Any, *, organization: str | Callable[[], str | None], descriptors: dict[str, Any] | Callable[[], dict[str, Any]] | None) -> None:
+    def _emit(self, kind: str, identifier: str, object: Any, *, organization: str | Callable[[], str | None], descriptors: dict[str, Any] | Callable[[], dict[str, Any] | None] | None) -> None:
         """Queue one signal for after the commit. ``organization``/``descriptors`` may be callables,
         evaluated then (see :meth:`model_signal`)."""
         from arkitekt_service.service.signals import current_provenance_token, enqueue
@@ -415,8 +549,13 @@ class Service:
         issuer = self.signing_identifier()
         audience = self.rekuest_identifier()
         key = self.signing_key()
+        creating = (identifier, str(object))
+        if kind == "CREATED":
+            self._creating.add(creating)
 
         def dispatch() -> None:
+            if kind == "CREATED":
+                self._creating.discard(creating)
             try:
                 org = organization() if callable(organization) else organization
                 values = descriptors() if callable(descriptors) else descriptors
@@ -425,6 +564,10 @@ class Service:
                 return
             if not org:
                 logger.debug("Signal %s %s %s has no organization; not sent", kind, identifier, object)
+                return
+            if values is None and callable(descriptors):
+                # Deleted before the commit (a cascade restored it on the way out): its DELETED says so.
+                logger.debug("Signal %s %s %s: the row is gone; not sent", kind, identifier, object)
                 return
             enqueue(config, service, issuer, audience, {**base, "organization": org, "descriptors": values or {}}, key)
 

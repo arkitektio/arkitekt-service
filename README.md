@@ -193,6 +193,45 @@ answers the same at `_rekuest/service/manifest`, for a rekuest nobody told.
 
 A service says what exists; an agent says what can be done. Neither knows the other.
 
+### Descriptors are stored
+
+A model whose structure declares descriptors keeps them on its rows. Binding it refuses any
+model that is not a `Described`:
+
+```python
+from django.contrib.postgres.indexes import GinIndex
+from arkitekt_service.service.described import Described
+
+
+class ArrayDataset(Described):
+    ...
+
+    class Meta:
+        indexes = [GinIndex(fields=["stored_descriptors"], name="mikro_ds_desc_gin", opclasses=["jsonb_path_ops"])]
+```
+
+Every save recomputes `stored_descriptors`, a save with `update_fields` included; a new row is
+described right after its insert, so a describer may read its relations. Signals and
+`service.describe(obj)` read the stored value, and so does a port's `requires`, which is one
+indexed condition:
+
+```python
+rows = ArrayDataset.objects.filter(service.requires(ArrayDataset, constraints))
+```
+
+A save does not see everything, so the writer restores the row:
+
+- rows written after the object that a descriptor counts: `service.restore(obj)`. Inside the
+  transaction that created the object this adds no UPDATED: its CREATED carries what is stored
+  at the commit
+- many-to-many changes: `service.restore(obj)`
+- `update()`: `service.restore(queryset)`
+- `bulk_update`: `service.stamp(rows)` first, with `stored_descriptors` among the fields
+
+A describer that raises keeps the row's previous value. The setup job `restore_descriptors`
+(declare it in `jobs=` and `setup=`) stores what any row still owes; `--all` describes every
+row again after a key changed its meaning.
+
 ## A Django server like the others
 
 ```python

@@ -13,7 +13,7 @@ thing = things.structure(
     Thing,
     "@things/thing",
     descriptors=("@things/n_parts",),
-    # Read at commit: counts the parts written after the thing itself.
+    # Counts the parts written after the thing itself: whoever writes them restores it.
     describe=lambda thing: {"@things/n_parts": thing.parts.count()},
 )
 # ... then, separately, announcing.
@@ -51,9 +51,20 @@ class TestModelSignals:
             made = Thing.objects.create(name="with parts")
             Part.objects.create(thing=made)
             Part.objects.create(thing=made)
+            # Restored by the writer of the parts. Inside the transaction that made the thing it
+            # is no UPDATED: the CREATED signal carries it, reading the stored value at the commit.
+            things.restore(made)
         (body,) = _bodies(intake, 1)
-        # Read at commit, so it sees the parts written after the thing.
         assert body["descriptors"] == things.describe(made) == {"@things/n_parts": 2}
+
+    def test_a_restore_that_changes_the_descriptors_is_an_update(self, intake):
+        made = Thing.objects.create(name="restored later")
+        Part.objects.create(thing=made)
+        assert things.restore(made) == 1
+        assert things.restore(made) == 0  # nothing changed, nothing announced
+        bodies = _bodies(intake, 2)
+        assert [(b["kind"], b["descriptors"]) for b in bodies] == [("CREATED", {"@things/n_parts": 0}), ("UPDATED", {"@things/n_parts": 1})]
+        assert _bodies(intake, 3, timeout=0.5) == bodies
 
     def test_a_rolled_back_save_sends_nothing(self, intake):
         with pytest.raises(RuntimeError):
