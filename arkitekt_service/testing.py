@@ -52,8 +52,8 @@ else:
 
 #: Names the image under test, when ``--service-image`` does not.
 IMAGE = "ARKITEKT_SERVICE_IMAGE"
-#: The redeem grant of a hub's coordination server.
-REDEEM = "urn:fakts:grant-type:redeem"
+#: The mandate-key grant of a hub's coordination server.
+MANDATE_KEY = "urn:fakts:grant-type:mandate-key"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -79,7 +79,7 @@ class ServiceHub:
 
     def token(self, app: str = "smoke") -> str:
         """An access token the hub's coordination server issues to an app that requires the service."""
-        return redeem(self.hub, self.service, app=app)
+        return mandate_key_grant(self.hub, self.service, app=app)
 
     def graphql(self, query: str, *, token: str | None = None) -> dict[str, Any]:
         """One GraphQL request to the service; with ``token`` as the app it was issued to."""
@@ -95,8 +95,8 @@ def _json(request: urllib.request.Request | str) -> dict[str, Any]:
         return {"http": error.code, "body": error.read().decode(errors="replace")[:500]}
 
 
-def redeem(hub: Hub, service: str, *, app: str = "smoke") -> str:
-    """Trade one of the hub's redeem tokens for an access token of an app that requires ``service``.
+def mandate_key_grant(hub: Hub, service: str, *, app: str = "smoke") -> str:
+    """Log in with one of the hub's mandate keys as an app that requires ``service``; its access token.
 
     The way any app gets in, unattended: nothing here is a test double.
     """
@@ -107,7 +107,7 @@ def redeem(hub: Hub, service: str, *, app: str = "smoke") -> str:
         "scopes": ["openid"],
         "requirements": [{"key": service, "service": hub.services[service].identifier}],
     }
-    body = urllib.parse.urlencode({"grant_type": REDEEM, "redeem_token": hub.redeem_token(app), "manifest": json.dumps(manifest)}).encode()
+    body = urllib.parse.urlencode({"grant_type": MANDATE_KEY, "key": hub.mandate_key(app), "manifest": json.dumps(manifest)}).encode()
     grant = _json(urllib.request.Request(well_known["token_endpoint"], data=body))
     assert "access_token" in grant, f"the hub's coordination server issued no token for {service}: {grant}"
     assert grant.get("statuses", {}).get(service) == "granted", f"{service} was not granted to the app: {grant.get('statuses')}"
@@ -169,7 +169,7 @@ def service_hub(request: pytest.FixtureRequest, service_image: str) -> Iterator[
     if not hasattr(konstruktor, "testing_hub"):
         pytest.skip("the hub is made by konstruktor 0.17 or newer, and an older one is installed: pip install -U konstruktor")
     make = request.getfixturevalue("konstruktor_hub")
-    hub: Hub = make(service_images=[service_image], redeem_tokens=4)
+    hub: Hub = make(service_images=[service_image], mandate_keys=4)
     services = [name for name in hub.services if name != "lok"]
     assert len(services) == 1, f"a hub made for one image runs {services}"
     yield ServiceHub(hub=hub, service=services[0], image=service_image)
