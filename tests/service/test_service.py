@@ -16,7 +16,7 @@ class TestDeclaration:
         local = Service("plain")
         assert not hasattr(local, "action") and not hasattr(local, "hook_agent")
         assert set(local.manifest()) == {"service", "identifier", "description", "structures", "signals", "manifest_version"}
-        assert local.manifest()["manifest_version"] == 3
+        assert local.manifest()["manifest_version"] == 4
 
     def test_signal_handles_check_their_kind(self):
         local = Service("kinds")

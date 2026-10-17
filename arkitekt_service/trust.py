@@ -12,6 +12,9 @@ A request from one service to another carries a short-lived JWT::
     claims  {iss: <sender's identifier>, aud: <receiver's identifier>, iat, exp (60 s), jti,
              htm: <method>, htu: <path>, bh: <base64url sha256 of the body>}
 
+Each key also carries the ``hub`` it was minted in. This instance's own key therefore tells it
+its hub (:func:`hub`) — what a scoped member's token lists the objects shared with them by.
+
 A receiver finds ``kid`` in the bundle, requires that key's ``service`` to be the claimed
 ``iss`` (so one service cannot speak as another), and checks ``aud``, the time window, and that
 method, path and body are the ones signed. Replay protection beyond the window is the receiver's
@@ -148,15 +151,32 @@ class TrustBundle:
         self._load(response.json())
         self._fetched_at = time.monotonic()
 
+    def _follow(self, uri: str | None, inline: dict | None) -> None:
+        """Start over when the configured source changed; load an inline bundle. Under the lock."""
+        source = (uri, id(inline) if inline is not None else None)
+        if source != self._source:
+            self._source, self._keys, self._fetched_at, self._last_attempt = source, {}, 0.0, 0.0
+            if inline is not None:
+                self._load(inline)
+
+    def peek(self, kid: str) -> dict[str, Any] | None:
+        """The JWK for ``kid`` as far as the bundle is already known: never fetched, never waited for.
+
+        None while a fetch holds the bundle: whoever asks gets no answer rather than a wait."""
+        uri, inline = self._configured()
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            self._follow(uri, inline)
+            return self._keys.get(kid)
+        finally:
+            self._lock.release()
+
     def get(self, kid: str) -> dict[str, Any] | None:
         """The JWK for ``kid`` (with its ``service``), or None when the bundle does not vouch for it."""
         uri, inline = self._configured()
         with self._lock:
-            source = (uri, id(inline) if inline is not None else None)
-            if source != self._source:
-                self._source, self._keys, self._fetched_at, self._last_attempt = source, {}, 0.0, 0.0
-                if inline is not None:
-                    self._load(inline)
+            self._follow(uri, inline)
             if uri:
                 now = time.monotonic()
                 stale = now - self._fetched_at > BUNDLE_TTL_SECONDS
@@ -170,6 +190,41 @@ class TrustBundle:
 
 
 trust_bundle = TrustBundle()
+
+
+def _hub_of(jwk: dict[str, Any] | None) -> str | None:
+    hub = (jwk or {}).get("hub")
+    return str(hub) if hub not in (None, "") else None
+
+
+#: The hub learned for an instance key (its PEM): an instance's hub does not change while it runs.
+_learned: dict[str, str] = {}
+
+
+def hub() -> str | None:
+    """The hub this instance runs in, from its own key in the trust bundle; fetched when not known yet.
+
+    None without an instance key, or when the bundle does not list it (or says no hub). Blocks
+    on the coord when the bundle has to be fetched: call it at startup, not on a request.
+    """
+    pem, key = _instance_settings().get("PRIVATE_KEY"), instance_key()
+    if pem is None or key is None:
+        return None
+    found = _learned.get(pem) or _hub_of(trust_bundle.get(key.thumbprint()))
+    if found is not None:
+        _learned[pem] = found
+    return found
+
+
+def known_hub() -> str | None:
+    """:func:`hub`, from what is already known: never waits on the network, nor on a fetch under way."""
+    pem, key = _instance_settings().get("PRIVATE_KEY"), instance_key()
+    if pem is None or key is None:
+        return None
+    found = _learned.get(pem) or _hub_of(trust_bundle.peek(key.thumbprint()))
+    if found is not None:
+        _learned[pem] = found
+    return found
 
 
 # --- signing and verifying -------------------------------------------------------------------

@@ -23,6 +23,9 @@ arkitekt-service = "arkitekt_service.contract.cli:main"
 # Forwarding the provenance token of the request a signal is emitted in reads koherent's
 # context variable; without koherent, signals simply carry no token.
 koherent = ["koherent>=4.1"]
+# Narrowing a scoped member's reads (arkitekt_service.sharing) reads the request's token, and tells
+# authentikate its scoped tokens are served here; without it, sharing stays off.
+authentikate = ["authentikate>=4.3"]
 
 [dependency-groups]
 dev = [

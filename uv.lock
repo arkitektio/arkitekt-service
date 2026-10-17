@@ -37,6 +37,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+authentikate = [
+    { name = "authentikate" },
+]
 koherent = [
     { name = "koherent" },
 ]
@@ -52,6 +55,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "authentikate", marker = "extra == 'authentikate'", specifier = ">=4.3" },
     { name = "django", specifier = ">=5" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "joserfc", specifier = ">=1.7" },
@@ -60,7 +64,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pyyaml", specifier = ">=6" },
 ]
-provides-extras = ["koherent"]
+provides-extras = ["authentikate", "koherent"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -82,7 +86,7 @@ wheels = [
 
 [[package]]
 name = "authentikate"
-version = "4.2.0"
+version = "4.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -92,9 +96,9 @@ dependencies = [
     { name = "kante" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/6d/7ddd154d7a4e9c6898d9339be392e3abfc637168116945c6b94f6946b91f/authentikate-4.2.0.tar.gz", hash = "sha256:08d5cdecf4dbc62c41cdf38c0cffe372ef9df12e5207211692fd0030dbc0d5c7", size = 44310, upload-time = "2026-09-26T07:40:40.163Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/39/593704ceb3955d2c626f7bb2c8c7b8daee0165ccd9344292311ed01a6314/authentikate-4.3.0.tar.gz", hash = "sha256:a19c5da084c1c8240693fd5bc7182626b030f1d21dd5b854efe50a85462c6d7b", size = 51059, upload-time = "2026-10-17T17:20:38.893Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/3c/237198c9dc9dc5eccbb59bbc6faba82804d945779608fe1ded0a3415f5d0/authentikate-4.2.0-py3-none-any.whl", hash = "sha256:117cc098a640eaa6134471d106057cdd43883697c169568cdf4e7cee24c4c3ae", size = 56057, upload-time = "2026-09-26T07:40:39.202Z" },
+    { url = "https://files.pythonhosted.org/packages/01/c8/8cfcc7c1a83f7cb540e73f19640455ae7832100dabe6b3f579d8e17cd157/authentikate-4.3.0-py3-none-any.whl", hash = "sha256:620c8e97dc0c6adf60f0b3169109904644fcb16a6b5b437c3be6a997bf2c4f7a", size = 64009, upload-time = "2026-10-17T17:20:37.7Z" },
 ]
 
 [[package]]
