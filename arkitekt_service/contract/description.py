@@ -118,41 +118,6 @@ class Descriptor(Said):
     description: str | None = None
 
 
-#: What a reach is called: ``self``, ``derived``. The coordination server's own pattern for the
-#: ``#<reach>`` of a grant.
-REACH_KEY = re.compile(r"[a-z][a-z0-9_-]{0,63}")
-
-#: The reach every structure has: the shared object itself.
-SELF_REACH = "self"
-
-#: A structure the coordination server can grant one object of. Narrower than
-#: :data:`STRUCTURE_IDENTIFIER`: lowercase, and of bounded length.
-GRANTABLE_STRUCTURE = re.compile(r"@[a-z0-9][a-z0-9_.-]{0,63}/[a-z0-9][a-z0-9_.-]{0,127}")
-
-
-class Reach(Said):
-    """How far a share of one of a structure's objects goes beyond the object.
-
-    A member shared a dataset sees the dataset (``self``); shared it ``#derived``, also
-    what was computed from it. What each reach covers is bound in the service's code
-    (``service.structure(..., closures=...)``); here it is said what it is, so that a hub
-    can offer it before anything runs.
-    """
-
-    key: str = Field(description="What a grant names it by (`#derived`). Every structure has `self`, the object alone.")
-    label: str | None = None
-    description: str | None = None
-    includes: list[str] = Field(default_factory=list, description="Other reaches of the structure this one covers as well. Every reach covers `self`.")
-    writes: bool = Field(default=False, description="Whether a share at this reach permits writes: drawing on the shared object, say. The mutations it permits check it.")
-
-    @field_validator("key")
-    @classmethod
-    def _the_key_is_one(cls, key: str) -> str:
-        if not REACH_KEY.fullmatch(key):
-            raise ValueError(f"a reach is a lowercase letter, then lowercase letters, digits, `_` and `-`, not {key!r}")
-        return key
-
-
 class Structure(Said):
     """A kind of object the service holds, known to the hub by its identifier."""
 
@@ -160,13 +125,6 @@ class Structure(Said):
     label: str | None = None
     description: str | None = None
     descriptors: list[Descriptor] = Field(default_factory=list, description="What is known of each of its objects, by key: what an action may require of an input, and a trigger test.")
-    reaches: list[Reach] = Field(default_factory=list, description="How far a share of one of its objects may go, beyond `self` (the object), which every structure has.")
-
-    @field_validator("reaches")
-    @classmethod
-    def _reaches_are_said_once_and_close(cls, reaches: list[Reach]) -> list[Reach]:
-        check_reaches(reaches)
-        return reaches
 
     @field_validator("identifier")
     @classmethod
@@ -182,31 +140,6 @@ class Structure(Said):
         if len(set(keys)) != len(keys):
             raise ValueError("a descriptor key is declared twice")
         return descriptors
-
-
-def check_reaches(reaches: list[Reach]) -> None:
-    """Refuse reaches said twice, an ``includes`` of no reach of the structure, and a cycle of them."""
-    keys = [reach.key for reach in reaches]
-    if len(set(keys)) != len(keys):
-        raise ValueError(f"the reach {', '.join(sorted({k for k in keys if keys.count(k) > 1}))} is declared twice")
-    known = {SELF_REACH, *keys}
-    includes = {reach.key: set(reach.includes) for reach in reaches}
-    for key, included in includes.items():
-        unknown = sorted(included - known)
-        if unknown:
-            raise ValueError(f"the reach {key} includes {', '.join(unknown)}, which the structure does not declare")
-    if includes.get(SELF_REACH):
-        raise ValueError("`self` is the object alone: it includes no other reach")
-    for start, direct in includes.items():
-        seen: set[str] = set()
-        frontier = set(direct)
-        while frontier:
-            key = frontier.pop()
-            if key == start:
-                raise ValueError(f"the reach {start} includes itself")
-            if key not in seen:
-                seen.add(key)
-                frontier |= includes.get(key, set())
 
 
 class Signal(Said):

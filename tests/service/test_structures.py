@@ -26,9 +26,8 @@ class TestDeclaration:
                 "label": "Shelf",
                 "description": "A shelf of books.",
                 "descriptors": [{"key": "@hosting/n_books", "type": "INT", "description": "How many books the shelf holds"}],
-                "reaches": [],
             },
-            {"identifier": "@hosting/book", "label": "Book", "description": None, "descriptors": [{"key": "@hosting/on", "type": "ANY", "description": None}], "reaches": []},
+            {"identifier": "@hosting/book", "label": "Book", "description": None, "descriptors": [{"key": "@hosting/on", "type": "ANY", "description": None}]},
         ]
 
     def test_hosting_declares_no_signal(self):

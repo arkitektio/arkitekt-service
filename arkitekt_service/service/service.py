@@ -44,18 +44,16 @@ from django.db import transaction
 from django.db.models import Q
 
 from arkitekt_service.contract.description import Hosts
-from arkitekt_service.contract.description import Reach as SaidReach
 from arkitekt_service.service.described import Described
 from arkitekt_service.service.requires import Constraint, requires_q
-from arkitekt_service.service.structures import SELF_REACH, Closures, Descriptor, Reach, Structure, check_identifier
+from arkitekt_service.service.structures import Descriptor, Structure, check_identifier
 
 logger = logging.getLogger(__name__)
 
 KINDS = ("CREATED", "UPDATED", "DELETED")
 
-#: 4: a structure lists its reaches (5.2: and whether each writes). 3: structures and signals only; a service's manifest lists no
-#: actions (2 still did).
-MANIFEST_VERSION = 4
+#: 3: structures and signals only; a service's manifest lists no actions (2 still did).
+MANIFEST_VERSION = 3
 
 
 #: How many rows a restore of a queryset reads at once.
@@ -101,20 +99,6 @@ def organization_of(path: str = "organization") -> Callable[[Any], str | None]:
         return getattr(obj, "slug", None)
 
     return resolve
-
-
-def _checked_reaches(identifier: str, reaches: Iterable[Reach | SaidReach | str] | None) -> tuple[Reach, ...]:
-    """Reaches declared in code (no contract), held to the contract's rules (:class:`~arkitekt_service.contract.description.Reach`).
-
-    Each is a :class:`Reach`, the contract's, or a bare key."""
-    from arkitekt_service.contract.description import check_reaches
-
-    declared = tuple(Reach(r) if isinstance(r, str) else r if isinstance(r, Reach) else Reach(r.key, r.label, r.description, tuple(r.includes), r.writes) for r in reaches or ())
-    try:
-        check_reaches([SaidReach(key=r.key, label=r.label, description=r.description, includes=list(r.includes), writes=r.writes) for r in declared])
-    except ValueError as error:
-        raise ValueError(f"The structure {identifier!r}: {error}") from None
-    return declared
 
 
 class Signal:
@@ -194,8 +178,6 @@ class Service:
         describe: Callable[[Any], dict[str, Any]] | None = None,
         label: str | None = None,
         description: str | None = None,
-        reaches: Iterable[Reach | SaidReach | str] | None = None,
-        closures: Closures | None = None,
     ) -> Structure:
         """Declare that this service hosts ``model`` as the structure ``identifier``.
 
@@ -212,47 +194,29 @@ class Service:
         ``stored_descriptors`` on every save (``pre_save``). What a save does not see, the writer
         restores (:meth:`restore`, :meth:`stamp`).
 
-        ``reaches`` lists how far a share of one of its objects may go beyond ``self`` (the
-        object alone, which every structure has); ``closures`` binds what each covers: for each
-        model, the lookup from its rows to the shared object's id, e.g. ``{"self": {DataArray:
-        "dataset_id"}, "derived": {TableDataset: "source_dataset_id"}}``. A structure bound with
-        closures says this process narrows reads to shared objects (:mod:`arkitekt_service.sharing`):
-        bind them only once the service's querysets go through ``object_scope``.
-
         For a service with a contract (``hosts``), the structure is declared there and this
-        binds it: ``structure(model, identifier, describe=..., closures=...)`` and nothing else.
+        binds it: ``structure(model, identifier, describe=...)`` and nothing else.
         """
         check_identifier(identifier)
         if self.hosts is not None:
             said = self.hosts.structure(identifier)
             if said is None:
                 raise ValueError(f"{self.name}'s contract hosts no structure {identifier!r}: declare it there (`hosts`), where the hub reads it")
-            if descriptors is not None or label is not None or description is not None or reaches is not None:
+            if descriptors is not None or label is not None or description is not None:
                 raise ValueError(f"What the structure {identifier!r} is and carries is said in {self.name}'s contract, once: here it is only bound to its model")
             declared_descriptors = tuple(Descriptor(d.key, d.type, d.description) for d in said.descriptors)
             label, description = said.label, said.description
-            declared_reaches = tuple(Reach(r.key, r.label, r.description, tuple(r.includes), r.writes) for r in said.reaches)
         else:
-            declared_reaches = _checked_reaches(identifier, reaches)
             declared_descriptors = tuple(d if isinstance(d, Descriptor) else Descriptor(d) for d in descriptors or ())
             if len({d.key for d in declared_descriptors}) != len(declared_descriptors):
                 raise ValueError(f"The structure {identifier!r} declares a descriptor key twice")
             if label is None and hasattr(model, "_meta"):
                 label = str(model._meta.verbose_name).title()
 
-        bound = {key: dict(lookups) for key, lookups in (closures or {}).items()}
-        unknown = sorted(set(bound) - {SELF_REACH, *(r.key for r in declared_reaches)})
-        if unknown:
-            raise ValueError(f"The structure {identifier!r} has no reach {', '.join(unknown)}: declare it before binding what it covers")
-        for key, lookups in bound.items():
-            bad = [lookup for lookup in lookups.values() if not isinstance(lookup, str) or not lookup]
-            if bad:
-                raise ValueError(f"The reach {key} of {identifier!r} covers a model by {bad[0]!r}: a lookup is a field path to the shared object's id")
-
-        declared = Structure(identifier, model, label, description, declared_descriptors, describe, declared_reaches, bound)
+        declared = Structure(identifier, model, label, description, declared_descriptors, describe)
         existing = self._structures.get(identifier)
         if existing is not None:
-            if existing.model is not model or existing.manifest() != declared.manifest() or existing.closures != declared.closures:
+            if existing.model is not model or existing.manifest() != declared.manifest():
                 raise ValueError(f"The structure {identifier!r} is declared twice, differently")
             return existing
         other = next((s for s in self._structures.values() if s.model is model), None)
@@ -265,21 +229,7 @@ class Service:
         self._structures[identifier] = declared
         if declared_descriptors and describe is not None:
             self._store_on_save(declared)
-        if bound:
-            self._share()
         return declared
-
-    #: The services that narrow reads to shared objects: those with a structure bound with closures.
-    sharing: ClassVar[list[Service]] = []
-
-    def _share(self) -> None:
-        """Say that this process narrows a scoped member's reads, so that authentikate serves their tokens."""
-        if self in Service.sharing:
-            return
-        Service.sharing.append(self)
-        from arkitekt_service.sharing import enforce
-
-        enforce()
 
     def _store_on_save(self, declared: Structure) -> None:
         from django.db.models.signals import post_save, pre_save
