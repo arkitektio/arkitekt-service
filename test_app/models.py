@@ -89,3 +89,12 @@ class Loan(models.Model):
 
     class Meta:
         app_label = "test_app"
+
+
+class Label(models.Model):
+    """Points at a shelf it is not part of: required, but it does not die with the shelf."""
+
+    shelf = models.ForeignKey(Shelf, on_delete=models.PROTECT, related_name="labels")
+
+    class Meta:
+        app_label = "test_app"

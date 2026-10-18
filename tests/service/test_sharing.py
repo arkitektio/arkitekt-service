@@ -12,7 +12,7 @@ from arkitekt_service.contract.description import Hosts, Reach, Structure
 from arkitekt_service.server.checks import check_sharing
 from arkitekt_service.service import Service
 from arkitekt_service.sharing import is_shared, kante_narrow, object_scope, require_shared
-from test_app.models import Book, Loan, Part, Shelf
+from test_app.models import Book, Label, Loan, Part, Shelf
 
 HUB = "3"
 
@@ -199,6 +199,11 @@ class TestDeclaration:
         assert declared.revealing(Book) == ["self"]
         assert declared.revealing(Loan) == ["derived"]  # `all` shows it too, through `derived`
         assert declared.revealing(Part) == []
+
+    def test_a_reference_that_does_not_cascade_is_not_part_of_the_object(self):
+        declared = Service("other").structure(Shelf, "@other/shelf")
+        assert declared.lookups(Label, "self") == []  # PROTECT: it points at the shelf, it is not of it
+        assert declared.lookups(Book, "self") == ["shelf"]  # CASCADE: it is
 
     @pytest.mark.parametrize(
         ("reaches", "match"),

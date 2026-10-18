@@ -20,9 +20,9 @@ organization. How far a share goes is a *reach*: ``self`` (the object alone, whi
 structure has) or one the structure declares (``derived``: also what was computed from it).
 What a reach covers is its *closure*: for each model, the lookup from a row to the id of the
 shared object (``{DataArray: "dataset_id"}``). ``self`` needs none for what is part of the object:
-a model whose required foreign keys lead to the structure's model (``DataArray.dataset``, at most
-three hops) comes with it. A nullable link (lineage, a derived table) never does: say it in a
-reach's closure. :mod:`arkitekt_service.sharing` narrows reads by them.
+a model whose required, cascading foreign keys lead to the structure's model (``DataArray.dataset``,
+at most three hops) dies with it, and comes with it. A nullable link (lineage, a derived table) or a
+reference that does not cascade (a scene's world) never does: say it in a reach's closure. :mod:`arkitekt_service.sharing` narrows reads by them.
 
 A reach may permit writes (``writes``): ``annotate``, drawing on the shared object. Which
 mutation it permits, and on what, its resolver checks (``sharing.require_shared``).
@@ -89,17 +89,20 @@ PART_OF_DEPTH = 3
 
 @cache
 def part_of(model: Any, root: Any, depth: int = PART_OF_DEPTH) -> str | None:
-    """The lookup from ``model``'s rows to their ``root`` through required foreign keys, if any.
+    """The lookup from ``model``'s rows to their ``root`` through required, cascading foreign keys, if any.
 
     What is part of an object (its arrays, its shapes) holds a required foreign key to it, or to
-    something that does. A nullable one is a link, not a part, and is never followed.
+    something that does, and is deleted with it. A nullable key is a link, and one that does not
+    cascade (``PROTECT``, ``RESTRICT``: a scene's world) a reference: neither is followed.
     """
     if depth == 0 or not hasattr(model, "_meta"):
         return None
-    from django.db.models import ForeignKey
+    from django.db.models import CASCADE, ForeignKey
 
     for found in model._meta.get_fields():
         if not isinstance(found, ForeignKey) or found.null or found.related_model in (None, model):
+            continue
+        if found.remote_field.on_delete is not CASCADE:
             continue
         related = found.related_model
         if isinstance(related, type) and issubclass(related, root):
