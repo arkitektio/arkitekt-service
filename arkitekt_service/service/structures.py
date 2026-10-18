@@ -14,13 +14,19 @@ else: a ``requires`` filter (:mod:`arkitekt_service.service.requires`), a signal
 A structure only HAS descriptors, and declaring one announces nothing: what is signalled about it
 is a separate declaration (``Service.model_signal``). What an action requires of an input or
 provides with an output is said on that action's ports, in terms of these keys.
+
+An object can be put in a collaboration (:mod:`arkitekt_service.collaborations`), for guests who see nothing else
+of the organization. What is part of it comes along, live: a model whose required, cascading
+foreign keys lead to the structure's model (``collaborations.guests.wholes``). What it needs besides, to be seen
+(a scene's datasets, a dataset's stores), its structure says (``depends``), and those are put in
+the collaboration with it.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 IDENTIFIER = re.compile(r"^@[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -61,6 +67,12 @@ class Structure:
     description: str | None
     descriptors: tuple[Descriptor, ...]
     describer: Callable[[Any], dict[str, Any]] | None
+    #: What an object needs besides its parts to be seen, put in a collaboration along with it.
+    depends: Callable[[Any], Iterable[Any]] | None = field(default=None, compare=False)
+
+    def dependencies(self, obj: Any) -> list[Any]:
+        """What ``obj`` needs to be seen, besides what is part of it: ``depends(obj)``, Nones dropped."""
+        return [found for found in (self.depends(obj) if self.depends is not None else ()) if found is not None]
 
     @property
     def keys(self) -> tuple[str, ...]:

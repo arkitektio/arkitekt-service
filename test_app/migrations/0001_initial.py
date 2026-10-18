@@ -5,42 +5,40 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Shelf',
+            name="Shelf",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-                ('organization', models.CharField(default='org', max_length=100)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=100)),
+                ("organization", models.CharField(default="org", max_length=100)),
             ],
         ),
         migrations.CreateModel(
-            name='Thing',
+            name="Thing",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-                ('organization', models.CharField(default='org', max_length=100)),
-                ('secret', models.BooleanField(default=False)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("name", models.CharField(max_length=100)),
+                ("organization", models.CharField(default="org", max_length=100)),
+                ("secret", models.BooleanField(default=False)),
             ],
         ),
         migrations.CreateModel(
-            name='Book',
+            name="Book",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('shelf', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='books', to='test_app.shelf')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("shelf", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="books", to="test_app.shelf")),
             ],
         ),
         migrations.CreateModel(
-            name='Part',
+            name="Part",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('thing', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='parts', to='test_app.thing')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("thing", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="parts", to="test_app.thing")),
             ],
         ),
     ]

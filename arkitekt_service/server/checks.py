@@ -1,4 +1,5 @@
-"""System checks: a config file that says something this release does not read.
+"""System checks: a config file that says something this release does not read, and guests let in
+to a service that does not know its instance.
 
 ``manage.py migrate`` runs them, so the warnings are in the log of the job that prepares the
 database, before anything serves.
@@ -28,3 +29,23 @@ def check_unread_configuration(app_configs: Sequence[AppConfig] | None, **kwargs
         *(Warning(f"The configuration sets `{key}`, which this release does not read.", hint="A misspelling, or a key of another release.", id="arkitekt.W001") for key in found.unknown),
         *(Warning(f"The configuration sets `{key}`, which is now `{now}`.", hint="Still read under its former name, for now.", id="arkitekt.W002") for key, now in found.renamed),
     ]
+
+
+@register()
+def check_guests(app_configs: Sequence[AppConfig] | None, **kwargs: object) -> list[CheckMessage]:
+    """``arkitekt.W011``: guests are let in, and the audience names no instance their collaborations are read for."""
+    from arkitekt_service.service.service import Service
+
+    if not Service.sharing:
+        return []
+    from arkitekt_service.collaborations.guests import current_instance
+
+    if current_instance() is None:
+        return [
+            Warning(
+                "Guests are let in, but this service's audience names no instance (it is *): their tokens are refused.",
+                hint="Set AUTHENTIKATE.audience to this service instance's id at the coordination server (konstruktor renders it).",
+                id="arkitekt.W011",
+            )
+        ]
+    return []

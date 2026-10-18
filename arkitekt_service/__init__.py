@@ -14,6 +14,10 @@ Three parts, for three different things a service process does:
 :mod:`arkitekt_service.hook`
     What can be *done* in its process: a HookAgent, whose actions rekuest reaches over HTTP.
 
+:mod:`arkitekt_service.collaborations`
+    What a guest of the organization is let in to: collaborations of its objects, and the gate that holds
+    their reads and writes to them (:mod:`arkitekt_service.graphql`).
+
 They share :mod:`arkitekt_service.trust` — no secrets between services: every instance signs
 with its own key, and the hub vouches for the public halves — and nothing else. A process uses
 any of them without the others; only ``contract`` is imported without Django.

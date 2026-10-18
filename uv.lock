@@ -37,6 +37,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+authentikate = [
+    { name = "authentikate" },
+]
 koherent = [
     { name = "koherent" },
 ]
@@ -44,6 +47,7 @@ koherent = [
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
+    { name = "graphql-core" },
     { name = "pytest" },
     { name = "pytest-django" },
     { name = "python-semantic-release" },
@@ -52,6 +56,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "authentikate", marker = "extra == 'authentikate'", specifier = ">=5" },
     { name = "django", specifier = ">=5" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "joserfc", specifier = ">=1.7" },
@@ -60,11 +65,12 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pyyaml", specifier = ">=6" },
 ]
-provides-extras = ["koherent"]
+provides-extras = ["authentikate", "koherent"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.39.8" },
+    { name = "graphql-core", specifier = ">=3.2,<3.3" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-django", specifier = ">=4.11" },
     { name = "python-semantic-release", specifier = ">=9.21.1" },
@@ -82,7 +88,7 @@ wheels = [
 
 [[package]]
 name = "authentikate"
-version = "4.2.0"
+version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -92,9 +98,9 @@ dependencies = [
     { name = "kante" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/6d/7ddd154d7a4e9c6898d9339be392e3abfc637168116945c6b94f6946b91f/authentikate-4.2.0.tar.gz", hash = "sha256:08d5cdecf4dbc62c41cdf38c0cffe372ef9df12e5207211692fd0030dbc0d5c7", size = 44310, upload-time = "2026-09-26T07:40:40.163Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/07/2d3b7e3d528271f0351dcc14ea45847e60c0afc25fbe43e4abb99cbdba35/authentikate-5.0.0.tar.gz", hash = "sha256:141abde928c73149dcfe1cb59982475cec895406acd4ee09f0e8620bbac20893", size = 51244, upload-time = "2026-10-18T18:26:44.347Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/3c/237198c9dc9dc5eccbb59bbc6faba82804d945779608fe1ded0a3415f5d0/authentikate-4.2.0-py3-none-any.whl", hash = "sha256:117cc098a640eaa6134471d106057cdd43883697c169568cdf4e7cee24c4c3ae", size = 56057, upload-time = "2026-09-26T07:40:39.202Z" },
+    { url = "https://files.pythonhosted.org/packages/60/17/a3a5c8c782c266be82bf36d2fe78167a354d80df1b6be0f8a45e0bdd6641/authentikate-5.0.0-py3-none-any.whl", hash = "sha256:c38f46ac97e81e75ff0c79981a55c4c2f55d4ec4471328e425de119821651d45", size = 63869, upload-time = "2026-10-18T18:26:42.912Z" },
 ]
 
 [[package]]
@@ -552,11 +558,11 @@ wheels = [
 
 [[package]]
 name = "graphql-core"
-version = "3.3.0"
+version = "3.2.13"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fa/90/dfade6d16a55abb45e41b215fcdc940e4f119a6ac7d87430d45d020b659f/graphql_core-3.3.0.tar.gz", hash = "sha256:fd3424e88af3f3211931c6ff96350f1cd9069cf0f1a31b9972899e35d39136b5", size = 726439, upload-time = "2026-09-27T14:50:14.57Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/5e/aa0d4e701b50db0bab71b125dd19ddb0f98c638d008d6f7e3d8ce9cbc92e/graphql_core-3.2.13.tar.gz", hash = "sha256:bb81dd266d4ab7b591bd976f1b23639d97776cb9ac1a896b4a93c271e11ed618", size = 577471, upload-time = "2026-09-27T12:22:57.136Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/13/03fb01b3581134cc30d7dd3fb8a9c429267574ace881a9e72c2f57896ee9/graphql_core-3.3.0-py3-none-any.whl", hash = "sha256:d37fac6ef4dfc3eaa5daa59dcb498d7cbb118439d240993c68fddc4cb1bade44", size = 347906, upload-time = "2026-09-27T14:50:12.905Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/b4/b52a324b0b297ddc49b8ea31a51d39fae63132f694a267b9381d94e2e0af/graphql_core-3.2.13-py3-none-any.whl", hash = "sha256:b0eb04f2c31556b2310a77c8fb53c74e8b56570f8fea594d89c6ef7827dbb497", size = 268191, upload-time = "2026-09-27T12:22:55.661Z" },
 ]
 
 [[package]]

@@ -13,6 +13,14 @@ SECRET_KEY = "rekuest-service-tests"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "arkitekt_service.server", "test_app"]
+try:  # the `authentikate` extra: collaborations and their gate are tested with it
+    import authentikate  # noqa: F401
+except ImportError:
+    pass
+else:
+    INSTALLED_APPS += ["authentikate", "arkitekt_service.collaborations"]
+    AUTH_USER_MODEL = "authentikate.User"
+    AUTHENTIKATE = {"issuers": [], "audience": "12"}
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 ROOT_URLCONF = "test_project.urls"
 USE_TZ = True

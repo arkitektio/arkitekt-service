@@ -178,6 +178,7 @@ class Service:
         describe: Callable[[Any], dict[str, Any]] | None = None,
         label: str | None = None,
         description: str | None = None,
+        depends: Callable[[Any], Iterable[Any]] | None = None,
     ) -> Structure:
         """Declare that this service hosts ``model`` as the structure ``identifier``.
 
@@ -194,8 +195,12 @@ class Service:
         ``stored_descriptors`` on every save (``pre_save``). What a save does not see, the writer
         restores (:meth:`restore`, :meth:`stamp`).
 
+        ``depends(obj)`` names what an object needs to be seen besides what is part of it (a
+        scene's datasets, a dataset's stores): put in a collaboration with it
+        (:mod:`arkitekt_service.collaborations`). What is part of it comes along by itself.
+
         For a service with a contract (``hosts``), the structure is declared there and this
-        binds it: ``structure(model, identifier, describe=...)`` and nothing else.
+        binds it: ``structure(model, identifier, describe=..., depends=...)`` and nothing else.
         """
         check_identifier(identifier)
         if self.hosts is not None:
@@ -213,7 +218,7 @@ class Service:
             if label is None and hasattr(model, "_meta"):
                 label = str(model._meta.verbose_name).title()
 
-        declared = Structure(identifier, model, label, description, declared_descriptors, describe)
+        declared = Structure(identifier, model, label, description, declared_descriptors, describe, depends)
         existing = self._structures.get(identifier)
         if existing is not None:
             if existing.model is not model or existing.manifest() != declared.manifest():
@@ -230,6 +235,37 @@ class Service:
         if declared_descriptors and describe is not None:
             self._store_on_save(declared)
         return declared
+
+    #: The services whose guests are let in, held to their collaborations (:meth:`share`).
+    sharing: ClassVar[list[Service]] = []
+
+    def share(self) -> None:
+        """Say that this process lets guests in to this service, held to their collaborations, so that
+        authentikate serves their tokens. ``arkitekt_service.graphql.annotate_schema`` calls it for
+        a schema behind the collaboration gate (``CollaborationGate``): call it only for such a schema."""
+        if self in Service.sharing:
+            return
+        Service.sharing.append(self)
+        from arkitekt_service.collaborations.guests import enforce
+
+        enforce()
+
+    def not_part_of(self, model: Any, *fields: str) -> None:
+        """Say that ``model``'s cascading foreign keys ``fields`` point at something shared, not at a
+        whole: a layer is its scene's, not part of the lens it draws through, which many scenes draw.
+        What is part of an object in a collaboration is in it too: these never bring a row along."""
+        from arkitekt_service.collaborations.guests import not_part_of
+
+        not_part_of(model, *fields)
+
+    @classmethod
+    def hosting(cls, target: Any) -> Structure | None:
+        """The structure an identifier or a model (class or instance) is hosted as, by any sharing service."""
+        for service in cls.sharing:
+            found = service.structure_for(target)
+            if found is not None:
+                return found
+        return None
 
     def _store_on_save(self, declared: Structure) -> None:
         from django.db.models.signals import post_save, pre_save

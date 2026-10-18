@@ -156,13 +156,7 @@ def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(m
 
 def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Each `manage.py` command runs in this interpreter, and its exit code comes back."""
-    (tmp_path / "manage.py").write_text(
-        "import os, sys\n"
-        "with open('ran', 'a') as log:\n"
-        "    log.write(f'{os.getpid()} {sys.argv[1:]}\\n')\n"
-        "if sys.argv[1] == 'fails':\n"
-        "    sys.exit(4)\n"
-    )
+    (tmp_path / "manage.py").write_text("import os, sys\nwith open('ran', 'a') as log:\n    log.write(f'{os.getpid()} {sys.argv[1:]}\\n')\nif sys.argv[1] == 'fails':\n    sys.exit(4)\n")
     monkeypatch.chdir(tmp_path)
 
     assert cli.manage("first", "--flag") == 0

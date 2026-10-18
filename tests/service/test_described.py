@@ -106,9 +106,10 @@ def test_only_what_a_structure_declares_can_be_required():
         crates.requires(Bottle, [])
 
 
-
 barrels = Service("barrels", key=settings.THINGS_KEY)
-barrels.model_signal(barrels.structure(Barrel, "@barrels/barrel", descriptors=["@barrels/name"], describe=lambda barrel: {"@barrels/name": barrel.name}), organization=lambda barrel: barrel.organization)
+barrels.model_signal(
+    barrels.structure(Barrel, "@barrels/barrel", descriptors=["@barrels/name"], describe=lambda barrel: {"@barrels/name": barrel.name}), organization=lambda barrel: barrel.organization
+)
 
 
 @pytest.mark.django_db(transaction=True)

@@ -23,10 +23,16 @@ arkitekt-service = "arkitekt_service.contract.cli:main"
 # Forwarding the provenance token of the request a signal is emitted in reads koherent's
 # context variable; without koherent, signals simply carry no token.
 koherent = ["koherent>=4.1"]
+# Collaborations (arkitekt_service.collaborations: what a guest is let in to) and the gate in arkitekt_service.graphql
+# read the request's token, and tell authentikate its guests are served here; without it, guests stay out.
+authentikate = ["authentikate>=5"]
 
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.8",
+    # strawberry-django 0.87's optimizer builds a GraphQLResolveInfo without graphql-core 3.3's
+    # new fields; the collaboration gate's tests run a query through it.
+    "graphql-core>=3.2,<3.3",
     "pytest>=8",
     "pytest-django>=4.11",
     "python-semantic-release>=9.21.1",
@@ -59,7 +65,7 @@ testpaths = ["tests/contract", "tests/service", "tests/server"]
 
 [tool.ruff]
 line-length = 200
-exclude = [".venv", "tests", "test_project", "hook_project", "test_app"]
+exclude = [".venv", "tests", "test_project", "hook_project", "test_app", "arkitekt_service/*/migrations"]
 
 # The contract is the part an installer depends on: it is typed strictly, `Any` included.
 [tool.basedpyright]

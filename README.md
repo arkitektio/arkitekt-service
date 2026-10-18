@@ -232,6 +232,37 @@ A describer that raises keeps the row's previous value. The setup job `restore_d
 (declare it in `jobs=` and `setup=`) stores what any row still owes; `--all` describes every
 row again after a key changed its meaning.
 
+## Collaborations: what a guest is let in to
+
+A guest of an organization sees nothing of it but the *collaborations* granted to them, with roles that
+hold only inside each (the coordination server lists them in the token's `collabs`; authentikate
+reads it). A collaboration lives in the service that holds its objects:
+`INSTALLED_APPS += ["arkitekt_service.collaborations"]` (needs the `authentikate` extra).
+
+What is in a collaboration is data: a full member puts objects in (`collaborations.items.add(collaboration, scene)`, or
+the `addToCollaboration` mutation of `arkitekt_service.collaborations.graphql`). With each comes what its
+structure says it needs to be seen, and what is part of any of them (a row whose required,
+cascading foreign keys lead to one) is in the collaboration live:
+
+```python
+service.structure(models.Scene, "@mikro/scene", depends=lambda scene: [scene.world, *lenses_of(scene)])
+```
+
+For a guest, every read is held to their collaborations:
+
+- at a root field, the scoping chokepoint narrows the queryset
+  (`object_scope(queryset, info=info)`; nested querysets are left as they are, so the optimizer
+  plans the same for guests and members);
+- the gate (`arkitekt_service.graphql.CollaborationGate`, after authentikate's extension) drops whatever a
+  resolver hands out that is in none of their collaborations, and refuses root fields that hand out no
+  objects (`COLLABORATION_DOES_NOT_REACH`);
+- a mutation opened to guests (`AuthExtension(..., allow_scoped=True)`) checks its target:
+  `require_in_collaboration(target, any_role_of=["editor"])`.
+
+`annotate_schema(schema, service)` adds `@identified(by: "@mikro/scene")` to each structure's type
+and, behind the gate, says the service lets guests in. The instance a guest's collaborations are read
+for is the service's `AUTHENTIKATE.audience`, which konstruktor renders as its instance id.
+
 ## A Django server like the others
 
 ```python

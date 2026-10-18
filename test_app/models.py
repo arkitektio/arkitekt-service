@@ -80,3 +80,21 @@ class Barrel(Described):
 
     class Meta:
         app_label = "test_app"
+
+
+class Loan(models.Model):
+    """Linked to a shelf, not part of it: a nullable foreign key. A shelf in a space brings its loans (`depends`)."""
+
+    shelf = models.ForeignKey(Shelf, null=True, on_delete=models.SET_NULL, related_name="loans")
+
+    class Meta:
+        app_label = "test_app"
+
+
+class Label(models.Model):
+    """Points at a shelf it is not part of: required, but it does not die with the shelf, so never in a space by it."""
+
+    shelf = models.ForeignKey(Shelf, on_delete=models.PROTECT, related_name="labels")
+
+    class Meta:
+        app_label = "test_app"
