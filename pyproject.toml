@@ -25,7 +25,7 @@ arkitekt-service = "arkitekt_service.contract.cli:main"
 koherent = ["koherent>=4.1"]
 # Narrowing a scoped member's reads (arkitekt_service.sharing) reads the request's token, and tells
 # authentikate its scoped tokens are served here; without it, sharing stays off.
-authentikate = ["authentikate>=4.3"]
+authentikate = ["authentikate>=4.4"]
 
 [dependency-groups]
 dev = [

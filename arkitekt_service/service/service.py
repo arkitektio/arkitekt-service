@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 KINDS = ("CREATED", "UPDATED", "DELETED")
 
-#: 4: a structure lists its reaches. 3: structures and signals only; a service's manifest lists no
+#: 4: a structure lists its reaches (5.2: and whether each writes). 3: structures and signals only; a service's manifest lists no
 #: actions (2 still did).
 MANIFEST_VERSION = 4
 
@@ -109,9 +109,9 @@ def _checked_reaches(identifier: str, reaches: Iterable[Reach | SaidReach | str]
     Each is a :class:`Reach`, the contract's, or a bare key."""
     from arkitekt_service.contract.description import check_reaches
 
-    declared = tuple(Reach(r) if isinstance(r, str) else r if isinstance(r, Reach) else Reach(r.key, r.label, r.description, tuple(r.includes)) for r in reaches or ())
+    declared = tuple(Reach(r) if isinstance(r, str) else r if isinstance(r, Reach) else Reach(r.key, r.label, r.description, tuple(r.includes), r.writes) for r in reaches or ())
     try:
-        check_reaches([SaidReach(key=r.key, label=r.label, description=r.description, includes=list(r.includes)) for r in declared])
+        check_reaches([SaidReach(key=r.key, label=r.label, description=r.description, includes=list(r.includes), writes=r.writes) for r in declared])
     except ValueError as error:
         raise ValueError(f"The structure {identifier!r}: {error}") from None
     return declared
@@ -231,7 +231,7 @@ class Service:
                 raise ValueError(f"What the structure {identifier!r} is and carries is said in {self.name}'s contract, once: here it is only bound to its model")
             declared_descriptors = tuple(Descriptor(d.key, d.type, d.description) for d in said.descriptors)
             label, description = said.label, said.description
-            declared_reaches = tuple(Reach(r.key, r.label, r.description, tuple(r.includes)) for r in said.reaches)
+            declared_reaches = tuple(Reach(r.key, r.label, r.description, tuple(r.includes), r.writes) for r in said.reaches)
         else:
             declared_reaches = _checked_reaches(identifier, reaches)
             declared_descriptors = tuple(d if isinstance(d, Descriptor) else Descriptor(d) for d in descriptors or ())

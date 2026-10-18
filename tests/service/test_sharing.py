@@ -11,8 +11,8 @@ from arkitekt_service import trust
 from arkitekt_service.contract.description import Hosts, Reach, Structure
 from arkitekt_service.server.checks import check_sharing
 from arkitekt_service.service import Service
-from arkitekt_service.sharing import is_shared, kante_narrow, object_scope
-from test_app.models import Book, Part, Shelf
+from arkitekt_service.sharing import is_shared, kante_narrow, object_scope, require_shared
+from test_app.models import Book, Loan, Part, Shelf
 
 HUB = "3"
 
@@ -22,6 +22,7 @@ class Grant:
     structure: str
     object_id: str
     reach: str = "self"
+    sharer: str | None = None
 
 
 @dataclass
@@ -30,6 +31,8 @@ class Token:
 
     objects: dict[str, list[Grant]] | None = None
     sub: str = "guest"
+    iss: str = "lok"
+    org: str | None = "org"
     _: Any = field(default=None, repr=False)
 
     @property
@@ -58,8 +61,8 @@ def lending() -> Service:
     service.structure(
         Shelf,
         "@lending/shelf",
-        reaches=[Reach(key="derived", label="With its books")],
-        closures={"derived": {Book: "shelf_id"}},
+        reaches=[Reach(key="derived", label="With its loans")],
+        closures={"derived": {Loan: "shelf"}},
     )
     return service
 
@@ -68,6 +71,9 @@ def lending() -> Service:
 def shelves(db):
     first, second = Shelf.objects.create(name="first"), Shelf.objects.create(name="second")
     books = [Book.objects.create(shelf=first), Book.objects.create(shelf=second)]
+    for shelf in (first, second):
+        Loan.objects.create(shelf=shelf)
+    Loan.objects.create(shelf=None)
     return first, second, books
 
 
@@ -90,21 +96,29 @@ class TestObjectScope:
         token = scoped(Grant("@lending/shelf", str(first.pk), "derived"))
         assert list(object_scope(Part.objects.all(), token, hub=HUB)) == []
 
+    def test_what_is_part_of_the_object_comes_with_it(self, shelves):
+        lending()
+        first, _, books = shelves
+        alone = scoped(Grant("@lending/shelf", str(first.pk)))
+        # A book holds a required foreign key to its shelf: no closure needed.
+        assert list(object_scope(Book.objects.all(), alone, hub=HUB)) == [books[0]]
+        # A loan only links to one (nullable): not part of the shelf.
+        assert list(object_scope(Loan.objects.all(), alone, hub=HUB)) == []
+
     def test_a_reach_adds_its_closure_and_keeps_self(self, shelves):
         lending()
         first, _, books = shelves
         derived = scoped(Grant("@lending/shelf", str(first.pk), "derived"))
+        assert [loan.shelf for loan in object_scope(Loan.objects.all(), derived, hub=HUB)] == [first]
         assert list(object_scope(Book.objects.all(), derived, hub=HUB)) == [books[0]]
         assert list(object_scope(Shelf.objects.all(), derived, hub=HUB)) == [first]
-        alone = scoped(Grant("@lending/shelf", str(first.pk)))
-        assert list(object_scope(Book.objects.all(), alone, hub=HUB)) == []
 
     def test_an_unknown_reach_is_self(self, shelves):
         lending()
         first, _, _ = shelves
         token = scoped(Grant("@lending/shelf", str(first.pk), "everything"))
         assert list(object_scope(Shelf.objects.all(), token, hub=HUB)) == [first]
-        assert list(object_scope(Book.objects.all(), token, hub=HUB)) == []
+        assert list(object_scope(Loan.objects.all(), token, hub=HUB)) == []
 
     def test_another_hub_and_another_services_structure_share_nothing(self, shelves):
         lending()
@@ -156,7 +170,7 @@ class TestObjectScope:
 class TestDeclaration:
     def test_the_manifest_lists_declared_reaches(self):
         manifest = lending().manifest()["structures"][0]
-        assert manifest["reaches"] == [{"key": "derived", "label": "With its books", "description": None, "includes": []}]
+        assert manifest["reaches"] == [{"key": "derived", "label": "With its loans", "description": None, "includes": [], "writes": False}]
 
     def test_binding_closures_makes_the_service_share(self):
         service = lending()
@@ -167,13 +181,24 @@ class TestDeclaration:
 
     def test_a_closure_for_an_undeclared_reach_is_refused(self):
         with pytest.raises(ValueError, match="no reach derived"):
-            Service("other").structure(Shelf, "@other/shelf", closures={"derived": {Book: "shelf_id"}})
+            Service("other").structure(Shelf, "@other/shelf", closures={"derived": {Loan: "shelf"}})
 
     def test_self_may_be_bound_without_declaring_it(self):
         service = Service("other")
-        declared = service.structure(Shelf, "@other/shelf", closures={"self": {Book: "shelf_id"}})
-        assert declared.lookups(Book, "self") == ["shelf_id"]
+        declared = service.structure(Shelf, "@other/shelf", closures={"self": {Loan: "shelf"}})
+        assert declared.lookups(Loan, "self") == ["shelf"]
+        assert declared.lookups(Book, "self") == ["shelf"]  # part of it: found, not bound
         assert declared.lookups(Shelf, "anything") == ["pk"]
+
+    def test_the_least_reaches_that_show_a_model(self):
+        service = Service("other")
+        declared = service.structure(
+            Shelf, "@other/shelf", reaches=[Reach(key="derived"), Reach(key="all", includes=["derived"])], closures={"derived": {Loan: "shelf"}}
+        )
+        assert declared.revealing(Shelf) == ["self"]
+        assert declared.revealing(Book) == ["self"]
+        assert declared.revealing(Loan) == ["derived"]  # `all` shows it too, through `derived`
+        assert declared.revealing(Part) == []
 
     @pytest.mark.parametrize(
         ("reaches", "match"),
@@ -202,6 +227,57 @@ class TestDeclaration:
         declared = service.structure(Shelf, "@said/shelf", closures={"derived": {Book: "shelf_id"}})
         assert declared.covered("derived") == {"self", "derived"}
         assert service.manifest()["structures"][0]["reaches"] == [r.model_dump() for r in hosts.structures[0].reaches]
+
+
+class TestRequireShared:
+    """A write a share permits: the object, at a reach that writes, by a sharer who may do it."""
+
+    @pytest.fixture
+    def annotating(self, monkeypatch):
+        service = Service("lending", key=settings.THINGS_KEY)
+        service.structure(
+            Shelf,
+            "@lending/shelf",
+            reaches=[Reach(key="derived"), Reach(key="annotate", includes=["self"], writes=True), Reach(key="all", includes=["annotate"])],
+            closures={"derived": {Loan: "shelf"}},
+        )
+        roles = {"8": ["editor"], "9": ["viewer"]}
+        monkeypatch.setattr("arkitekt_service.sharing.sharer_roles", lambda token, sharer: roles.get(sharer))
+        return service
+
+    def _write(self, *grants: Grant, **kwargs):
+        require_shared("@lending/shelf", 1, "annotate", token=scoped(*grants), hub=HUB, **kwargs)
+
+    def test_a_share_at_a_covering_reach_permits_it(self, annotating):
+        self._write(Grant("@lending/shelf", "1", "annotate", "8"), any_role_of=["editor"])
+        self._write(Grant("@lending/shelf", "1", "all", "8"), any_role_of=["editor"])  # `all` covers `annotate`
+        self._write(Grant("@lending/shelf", "1", "annotate"))  # no roles asked: no sharer needed
+
+    def test_a_share_of_another_object_or_reach_does_not(self, annotating):
+        from django.core.exceptions import PermissionDenied
+
+        for grant in (Grant("@lending/shelf", "2", "annotate", "8"), Grant("@lending/shelf", "1", "self", "8"), Grant("@lending/shelf", "1", "derived", "8")):
+            with pytest.raises(PermissionDenied):
+                self._write(grant, any_role_of=["editor"])
+
+    def test_the_sharer_must_hold_the_roles_here(self, annotating):
+        from django.core.exceptions import PermissionDenied
+
+        with pytest.raises(PermissionDenied):
+            self._write(Grant("@lending/shelf", "1", "annotate", "9"), any_role_of=["editor"])  # a viewer shared it
+        with pytest.raises(PermissionDenied):
+            self._write(Grant("@lending/shelf", "1", "annotate", "7"), any_role_of=["editor"])  # never seen here
+        with pytest.raises(PermissionDenied):
+            self._write(Grant("@lending/shelf", "1", "annotate"), any_role_of=["editor"])  # no sharer said
+        # One grant by a sharer who may is enough.
+        self._write(Grant("@lending/shelf", "1", "annotate", "9"), Grant("@lending/shelf", "1", "annotate", "8"), roles=["editor"])
+
+    def test_a_full_member_passes_and_a_reach_that_writes_nothing_is_a_mistake(self, annotating):
+        require_shared("@lending/shelf", 1, "annotate", token=Token(), hub=HUB, any_role_of=["editor"])
+        with pytest.raises(ValueError, match="permits writes"):
+            require_shared("@lending/shelf", 1, "derived", token=scoped(), hub=HUB)
+        with pytest.raises(ValueError, match="permits writes"):
+            require_shared("@other/shelf", 1, "annotate", token=scoped(), hub=HUB)
 
 
 class TestChecks:

@@ -18,6 +18,15 @@ covers — the object, and what its reach's closures say (``Service.structure(..
 Binding a closure is what tells authentikate this process narrows (``enforce_scoped``): until a
 service does, its scoped tokens are rejected. Bind them once the querysets go through here.
 
+A share may also permit a write, when its reach says so (``writes``). The mutation opens itself to
+such shares (authentikate's ``AuthExtension(shared_by=[...])``) and its resolver checks the object
+it writes to::
+
+    require_shared("@mikro/scene", scene_id, "annotate", any_role_of=["admin", "editor"])
+
+which, for a scoped member, wants a grant of that object at a reach covering ``annotate``, made
+by a sharer who holds those roles here. A share never permits what its sharer may not do.
+
 The hub a token's grants are read for is ``AUTHENTIKATE.HUB``, else the one this instance's key
 names in the trust bundle (:func:`arkitekt_service.trust.known_hub`). Needs authentikate >= 4.3
 (the ``authentikate`` extra) to read the request's token.
@@ -46,10 +55,14 @@ class Grant(Protocol):
     structure: str
     object_id: str
     reach: str
+    sharer: str | None
 
 
 class Token(Protocol):
     """What is read of a request's token (``authentikate.JWTToken``)."""
+
+    iss: str
+    org: str | None
 
     @property
     def is_scoped(self) -> bool: ...
@@ -196,6 +209,74 @@ def is_shared(structure: str, object_id: Any, token: Token | None = None, *, hub
     return any(g.structure == structure and g.object_id == str(object_id) for g in token.grants_for(hub))
 
 
+def _insufficient(message: str) -> Exception:
+    try:
+        from authentikate.errors import ShareInsufficient
+    except ImportError:  # authentikate before 4.4
+        from django.core.exceptions import PermissionDenied
+
+        return PermissionDenied(message)
+    return ShareInsufficient(message)
+
+
+def sharer_roles(token: Token, sharer: str) -> list[str] | None:
+    """The roles ``sharer`` holds in the token's organization, as this service last saw them;
+    None when it never saw them there, or blocked them."""
+    if not _authentikate() or not token.org:
+        return None
+    from authentikate.models import Membership
+
+    membership = Membership.objects.filter(user__sub=sharer, user__iss=token.iss, organization__slug=token.org).first()
+    if membership is None or membership.blocked:
+        return None
+    return list(membership.roles or [])
+
+
+def require_shared(
+    structure: str,
+    object_id: Any,
+    reach: str,
+    *,
+    any_role_of: Iterable[str] | None = None,
+    roles: Iterable[str] | None = None,
+    token: Token | None = None,
+    hub: str | None = None,
+) -> None:
+    """Refuse a scoped member's write to ``structure:object_id`` that no share of theirs permits.
+
+    It is permitted by a grant of that object whose reach covers ``reach`` (a reach that
+    ``writes``), made by a sharer who holds ``roles`` (all) and ``any_role_of`` (one) here — the
+    roles the mutation requires of a member. A full member passes: their own roles were checked.
+    Raises ``ShareInsufficient`` (a 403); ``ValueError`` for a reach that permits no write.
+    """
+    token = current_token() if token is None else token
+    if token is None or not token.is_scoped:
+        return
+    declared = shared_structures().get(structure)
+    said = declared.reach(reach) if declared is not None else None
+    if declared is None or said is None or not said.writes:
+        raise ValueError(f"{structure}#{reach} is no reach that permits writes")
+    hub = current_hub() if hub is None else hub
+    grants = [grant for grant in (token.grants_for(hub) if hub is not None else ()) if grant.structure == structure and grant.object_id == str(object_id) and reach in declared.covered(grant.reach)]
+    if not grants:
+        raise _insufficient(f"{structure}:{object_id} is not shared with {getattr(token, 'sub', '?')} to {reach}")
+    every, one_of = set(roles or ()), set(any_role_of or ())
+    if not every and not one_of:
+        return
+    for grant in grants:
+        held = sharer_roles(token, grant.sharer) if grant.sharer is not None else None
+        if held is not None and every <= set(held) and (not one_of or one_of & set(held)):
+            return
+    raise _insufficient(f"No sharer of {structure}:{object_id} may {reach} it themselves")
+
+
+async def arequire_shared(*args: Any, **kwargs: Any) -> None:
+    """:func:`require_shared`, for an async resolver."""
+    from asgiref.sync import sync_to_async
+
+    await sync_to_async(require_shared)(*args, **kwargs)
+
+
 def kante_narrow(queryset: QuerySet[Any], info: Any) -> QuerySet[Any]:
     """:func:`object_scope` as kante's narrowing step (``KANTE_OBJECT_SCOPE``)."""
     try:
@@ -206,13 +287,16 @@ def kante_narrow(queryset: QuerySet[Any], info: Any) -> QuerySet[Any]:
 
 
 __all__ = [
+    "arequire_shared",
     "current_hub",
     "current_token",
     "enforce",
     "is_shared",
     "kante_narrow",
     "object_scope",
+    "require_shared",
     "shared_ids",
     "shared_structures",
+    "sharer_roles",
     "target_field",
 ]

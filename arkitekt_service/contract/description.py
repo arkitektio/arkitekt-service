@@ -143,6 +143,7 @@ class Reach(Said):
     label: str | None = None
     description: str | None = None
     includes: list[str] = Field(default_factory=list, description="Other reaches of the structure this one covers as well. Every reach covers `self`.")
+    writes: bool = Field(default=False, description="Whether a share at this reach permits writes: drawing on the shared object, say. The mutations it permits check it.")
 
     @field_validator("key")
     @classmethod

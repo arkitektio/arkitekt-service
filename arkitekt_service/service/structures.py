@@ -19,8 +19,13 @@ A structure's objects can be shared one at a time, with members who see nothing 
 organization. How far a share goes is a *reach*: ``self`` (the object alone, which every
 structure has) or one the structure declares (``derived``: also what was computed from it).
 What a reach covers is its *closure*: for each model, the lookup from a row to the id of the
-shared object (``{DataArray: "dataset_id"}``). :mod:`arkitekt_service.sharing` narrows reads by
-them.
+shared object (``{DataArray: "dataset_id"}``). ``self`` needs none for what is part of the object:
+a model whose required foreign keys lead to the structure's model (``DataArray.dataset``, at most
+three hops) comes with it. A nullable link (lineage, a derived table) never does: say it in a
+reach's closure. :mod:`arkitekt_service.sharing` narrows reads by them.
+
+A reach may permit writes (``writes``): ``annotate``, drawing on the shared object. Which
+mutation it permits, and on what, its resolver checks (``sharing.require_shared``).
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any
 
 IDENTIFIER = re.compile(r"^@[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -70,9 +76,38 @@ class Reach:
     label: str | None = None
     description: str | None = None
     includes: tuple[str, ...] = ()
+    #: Whether a share at this reach permits writes (drawing on the shared object, say).
+    writes: bool = False
 
     def manifest(self) -> dict[str, Any]:
-        return {"key": self.key, "label": self.label, "description": self.description, "includes": list(self.includes)}
+        return {"key": self.key, "label": self.label, "description": self.description, "includes": list(self.includes), "writes": self.writes}
+
+
+#: How many required foreign keys ``self`` follows from a model to a structure's model.
+PART_OF_DEPTH = 3
+
+
+@cache
+def part_of(model: Any, root: Any, depth: int = PART_OF_DEPTH) -> str | None:
+    """The lookup from ``model``'s rows to their ``root`` through required foreign keys, if any.
+
+    What is part of an object (its arrays, its shapes) holds a required foreign key to it, or to
+    something that does. A nullable one is a link, not a part, and is never followed.
+    """
+    if depth == 0 or not hasattr(model, "_meta"):
+        return None
+    from django.db.models import ForeignKey
+
+    for found in model._meta.get_fields():
+        if not isinstance(found, ForeignKey) or found.null or found.related_model in (None, model):
+            continue
+        related = found.related_model
+        if isinstance(related, type) and issubclass(related, root):
+            return found.name
+        deeper = part_of(related, root, depth - 1)
+        if deeper is not None:
+            return f"{found.name}__{deeper}"
+    return None
 
 
 #: For each reach, the lookup from each covered model's rows to the shared object's id.
@@ -115,13 +150,26 @@ class Structure:
     def lookups(self, model: Any, reach: str) -> list[str]:
         """The lookups from ``model``'s rows to the id of an object of this structure shared ``#reach``."""
         found = []
-        if isinstance(model, type) and isinstance(self.model, type) and issubclass(model, self.model):
-            found.append("pk")
+        if isinstance(model, type) and isinstance(self.model, type):
+            if issubclass(model, self.model):
+                found.append("pk")
+            elif (path := part_of(model, self.model)) is not None:
+                found.append(path)
         for key in sorted(self.covered(reach)):
             for covered, lookup in self.closures.get(key, {}).items():
                 if isinstance(model, type) and issubclass(model, covered) and lookup not in found:
                     found.append(lookup)
         return found
+
+    def revealing(self, model: Any) -> list[str]:
+        """The least reaches whose share shows ``model``'s rows: ``["self"]`` when the object itself
+        does, else each reach that does without one it covers doing so already; ``[]`` for none."""
+        shows = {key: bool(self.lookups(model, key)) for key in self.reach_keys}
+        return [key for key in self.reach_keys if shows[key] and not any(shows[other] for other in self.covered(key) - {key})]
+
+    def reach(self, key: str) -> Reach | None:
+        """The reach declared under ``key``; ``self`` is one, declared or not."""
+        return next((r for r in self.reaches if r.key == key), Reach(SELF_REACH) if key == SELF_REACH else None)
 
     @property
     def keys(self) -> tuple[str, ...]:
