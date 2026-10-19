@@ -32,7 +32,9 @@ dev = [
     "basedpyright>=1.39.8",
     # strawberry-django 0.87's optimizer builds a GraphQLResolveInfo without graphql-core 3.3's
     # new fields; the collaboration gate's tests run a query through it.
+    "dokker>=2.8",
     "graphql-core>=3.2,<3.3",
+    "psycopg[binary]>=3.2",
     "pytest>=8",
     "pytest-django>=4.11",
     "python-semantic-release>=9.21.1",
@@ -59,13 +61,15 @@ fallback-version = "0.0.0"
 # The service's and the contract's tests run in `test_project`. The hook agent's run in a
 # project of their own — a process that is no service — and so in a run of their own:
 #   uv run pytest tests/hook --ds=hook_project.settings
+# The change feed needs a real Postgres (xid8, snapshots), brought up by dokker:
+#   uv run pytest tests/feed --ds=feed_project.settings
 DJANGO_SETTINGS_MODULE = "test_project.settings"
 pythonpath = ["."]
 testpaths = ["tests/contract", "tests/service", "tests/server"]
 
 [tool.ruff]
 line-length = 200
-exclude = [".venv", "tests", "test_project", "hook_project", "test_app", "arkitekt_service/*/migrations"]
+exclude = [".venv", "tests", "test_project", "hook_project", "feed_project", "test_app", "arkitekt_service/*/migrations"]
 
 # The contract is the part an installer depends on: it is typed strictly, `Any` included.
 [tool.basedpyright]

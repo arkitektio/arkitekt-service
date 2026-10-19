@@ -1,0 +1,12 @@
+services:
+   db:
+      # The hub's Postgres: the feed needs xid8 and pg_current_snapshot() (13+); the hub runs 19.
+      image: ${DATEN_IMAGE:-jhnnsrs/daten:next}
+      command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+      environment:
+         POSTGRES_MULTIPLE_DATABASES: testdb
+         POSTGRES_PASSWORD: test
+         POSTGRES_USER: test
+      # No host port: docker picks one, and the conftest asks the running stack which.
+      ports:
+        - 5432
