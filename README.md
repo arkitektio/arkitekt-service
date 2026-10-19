@@ -7,6 +7,7 @@ What a service of an [Arkitekt](https://arkitekt.live) hub is made with. Its par
 | `arkitekt_service.contract` | What the service's **image** answers the hub's installer: what it needs, its own config written from the hub's facts, its migrations and jobs. |
 | `arkitekt_service.service` | What the service **is** to the hub's rekuest: the structures it hosts and the signals it emits. |
 | `arkitekt_service.hook` | What can be **done** in its process: a HookAgent, whose actions rekuest reaches over HTTP. |
+| `arkitekt_service.feed` | What it **changed**, durably and in order: a change feed another service reads with its instance key. |
 | `arkitekt_service.server` | What every service is as a **Django server**: the settings blocks they all spell alike, `ensureadmin`, `validate_settings`. |
 | `arkitekt_service.testing` | A pytest fixture and check that **prove an image** in a hub made for the test. |
 
@@ -193,6 +194,57 @@ answers the same at `_rekuest/service/manifest`, for a rekuest nobody told.
 
 A service says what exists; an agent says what can be done. Neither knows the other.
 
+An action may take an object of a structure, so that a trigger on that structure's signals can
+run it: the port is declared, and the run is handed a `StructureRef` (None for a nullable port a
+schedule's run left out):
+
+```python
+from arkitekt_service.hook import StructurePort, StructureRef
+
+
+@agent.action(args=[StructurePort("metric", "@mikro/metric", nullable=True)])
+def ingest_metrics(organization: str, metric: StructureRef | None = None) -> dict:
+    """Ingest new metrics."""
+    ...
+```
+
+## A change feed
+
+Signals are best effort: a queue in the process, dropped when full, gone when it dies. A feed is
+what another service can rely on. The producer records each change in the transaction that makes
+it, and serves the feed to the services it names:
+
+```python
+from arkitekt_service.feed.api import Change, record_change
+from arkitekt_service.feed.publisher import FeedPublisher
+
+with transaction.atomic():
+    metric = Metric.objects.create(...)
+    record_change(Change("@mikro/metric", "CREATED", str(metric.pk), org.slug, uuid=metric.uuid))
+
+publisher = FeedPublisher("live.arkitekt.mikro")
+publisher.feed("@mikro/metric", readers=["live.arkitekt.kraph"], render=render_metrics)
+urlpatterns = [..., *publisher.urls]  # POST _feed, signed by the reader's instance key
+```
+
+A reader applies one organization's pages, each in one transaction with its cursor — nothing
+lost, nothing applied twice, one run at a time:
+
+```python
+from arkitekt_service.feed.consumer import apply_pages
+from arkitekt_service.feed.reader import FeedReader
+
+reader = FeedReader(url=mikro_feed_url, producer="live.arkitekt.mikro", feed="@mikro/metric", issuer="live.arkitekt.kraph")
+apply_pages(reader, "lab", apply=apply_page, budget_s=20)
+```
+
+Entries come in the order of the transactions that wrote them, and only once no open transaction
+can still commit below them (`xid < pg_snapshot_xmin(pg_current_snapshot())`) — so an open
+transaction anywhere in the cluster holds the feed back while it is open. A reader stops for good
+(until `resume`) when the producer was restored (its epoch changed, or its transaction counter
+went back) or when an entry cannot be applied (`Poison`); any other error fails the run and the
+next one retries the same page. Add `"arkitekt_service.feed"` to `INSTALLED_APPS`.
+
 ### Descriptors are stored
 
 A model whose structure declares descriptors keeps them on its rows. Binding it refuses any
@@ -308,6 +360,7 @@ restarted. It needs Docker and `konstruktor`; it is for the job that builds the 
 uv sync
 uv run pytest                                          # the contract and the service
 uv run pytest tests/hook --ds=hook_project.settings    # the hook agent: a process that is no service
+uv run pytest tests/feed --ds=feed_project.settings    # the change feed: a real Postgres, via dokker
 uv run basedpyright
 ```
 

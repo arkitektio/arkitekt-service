@@ -20,6 +20,10 @@ hub the agent and registers its actions as real actions. So an action runs for o
 a function that takes ``organization`` is given its slug and does that organization's share of
 the work, nothing else.
 
+An action may take a structure: ``@agent.action(args=[StructurePort("metric", "@mikro/metric")])``
+declares a STRUCTURE port, so a trigger on that structure's signals can run it, and the function
+is handed a :class:`StructureRef` (or None, when a nullable port was left out — a schedule's run).
+
 An agent only OFFERS actions. When one runs — on a schedule, on a signal, by hand — is not the
 agent's to say: nothing here wires an action to a schedule or a trigger. That is the
 organization's automation, set up by its users.
@@ -28,14 +32,39 @@ organization's automation, set up by its users.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
 
 #: 1: ``agent``, ``identifier``, ``description`` and ``actions``.
-MANIFEST_VERSION = 1
+#: 2: each action's ``args``, its STRUCTURE ports.
+MANIFEST_VERSION = 2
+
+#: The argument rekuest's Assign does not carry: the agent fills it from the run's organization.
+ORGANIZATION = "organization"
+
+
+@dataclass(frozen=True)
+class StructurePort:
+    """An argument that takes one object of a structure (``@mikro/metric``), as rekuest spells a STRUCTURE port."""
+
+    key: str
+    identifier: str
+    description: str | None = None
+    nullable: bool = False
+
+    def manifest(self) -> dict[str, Any]:
+        return {"key": self.key, "kind": "STRUCTURE", "identifier": self.identifier, "nullable": self.nullable, "description": self.description}
+
+
+@dataclass(frozen=True)
+class StructureRef:
+    """The object a run was given for a STRUCTURE port: the structure's identifier and the object's id."""
+
+    identifier: str
+    object: str
 
 
 @dataclass(frozen=True)
@@ -44,14 +73,37 @@ class Action:
     function: Callable[..., Any]
     name: str
     description: str | None
+    args: tuple[StructurePort, ...] = ()
 
     @property
     def takes_organization(self) -> bool:
         """Whether the function asks for the ``organization`` (slug) the run is for."""
-        return "organization" in inspect.signature(self.function).parameters
+        return ORGANIZATION in inspect.signature(self.function).parameters
 
     def manifest(self) -> dict[str, Any]:
-        return {"interface": self.interface, "name": self.name, "description": self.description}
+        return {"interface": self.interface, "name": self.name, "description": self.description, "args": [port.manifest() for port in self.args]}
+
+    def arguments(self, given: dict[str, Any], organization: str | None) -> dict[str, Any]:
+        """What the function is called with: each port's object as a :class:`StructureRef`, and the organization.
+
+        Only declared ports are passed on. A left-out nullable port is None; a left-out required
+        one, or an object of another structure, is refused (``ValueError``) — rekuest validated
+        the Assign, so either means it was not built for this action.
+        """
+        arguments: dict[str, Any] = {}
+        for port in self.args:
+            value = given.get(port.key)
+            if value is None:
+                if not port.nullable:
+                    raise ValueError(f"The action {self.interface!r} needs {port.key!r}, a {port.identifier}")
+                arguments[port.key] = None
+                continue
+            if not isinstance(value, dict) or value.get("__identifier") != port.identifier or value.get("object") is None:
+                raise ValueError(f"{port.key!r} of {self.interface!r} takes a {port.identifier}, not {value!r}")
+            arguments[port.key] = StructureRef(identifier=port.identifier, object=str(value["object"]))
+        if self.takes_organization:
+            arguments[ORGANIZATION] = organization
+        return arguments
 
 
 def _docstring_parts(function: Callable[..., Any]) -> tuple[str | None, str | None]:
@@ -61,6 +113,19 @@ def _docstring_parts(function: Callable[..., Any]) -> tuple[str | None, str | No
         return None, None
     first, _, rest = doc.partition("\n")
     return first.strip() or None, rest.strip() or None
+
+
+def _check_ports(interface: str, function: Callable[..., Any], ports: Sequence[StructurePort]) -> None:
+    """Every port is a parameter of ``function``, named once, and none is ``organization``."""
+    parameters = inspect.signature(function).parameters
+    keys = [port.key for port in ports]
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"The action {interface!r} declares a port twice: {keys}")
+    for key in keys:
+        if key == ORGANIZATION:
+            raise ValueError(f"The action {interface!r} cannot take {ORGANIZATION!r} as a port: the agent fills it in")
+        if key not in parameters:
+            raise ValueError(f"The action {interface!r} declares the port {key!r}, which its function does not take")
 
 
 class HookAgent:
@@ -88,18 +153,22 @@ class HookAgent:
         interface: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        args: Sequence[StructurePort] = (),
     ) -> Any:
-        """Offer ``function`` (sync or async; no arguments, or ``organization``) as an action; ``@agent.action`` or ``@agent.action(...)``.
+        """Offer ``function`` (sync or async) as an action; ``@agent.action`` or ``@agent.action(...)``.
 
-        The interface defaults to the function's name; name and description to its docstring's
-        first line and the rest. It should return a small JSON-able dict, reported as the run's
-        result, and must be safe to run twice — a lost report may get it redelivered.
+        The function takes the ``args`` declared (each a :class:`StructurePort`, handed over as a
+        :class:`StructureRef`) and, if it asks for it, ``organization``. The interface defaults to
+        the function's name; name and description to its docstring's first line and the rest. It
+        should return a small JSON-able dict, reported as the run's result, and must be safe to run
+        twice — a lost report may get it redelivered.
         """
 
         def register(target: Callable[..., Any]) -> Callable[..., Any]:
             key = interface or target.__name__
+            _check_ports(key, target, args)
             doc_name, doc_description = _docstring_parts(target)
-            declared = Action(key, target, name or doc_name or key, description if description is not None else doc_description)
+            declared = Action(key, target, name or doc_name or key, description if description is not None else doc_description, tuple(args))
             existing = self._actions.get(key)
             if existing is not None and existing.function is not target:
                 raise ValueError(f"The action {key!r} is registered twice")

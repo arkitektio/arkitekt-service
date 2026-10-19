@@ -8,7 +8,7 @@ from django.urls import reverse
 from joserfc.jwk import OKPKey
 from arkitekt_service import trust
 
-from arkitekt_service.hook import HookAgent
+from arkitekt_service.hook import HookAgent, StructurePort, StructureRef
 from hook_project.urls import agent
 from tests.hook.conftest import as_rekuest
 
@@ -16,7 +16,7 @@ from tests.hook.conftest import as_rekuest
 class TestDeclaration:
     def test_an_agent_needs_no_service(self):
         local = HookAgent("alone", description="Works alone.")
-        assert local.manifest() == {"agent": "alone", "identifier": "live.arkitekt.alone", "description": "Works alone.", "actions": [], "manifest_version": 1}
+        assert local.manifest() == {"agent": "alone", "identifier": "live.arkitekt.alone", "description": "Works alone.", "actions": [], "manifest_version": 2}
 
     def test_actions_take_name_and_description_from_the_docstring(self):
         local = HookAgent("doc")
@@ -34,7 +34,7 @@ class TestDeclaration:
             return {}
 
         first, second = local.manifest()["actions"]
-        assert first == {"interface": "compact", "name": "Compact the store", "description": "Merges small files into big ones."}  # offered, not wired to anything
+        assert first == {"interface": "compact", "name": "Compact the store", "description": "Merges small files into big ones.", "args": []}  # offered, not wired to anything
         assert (second["interface"], second["name"], second["description"]) == ("bare", "bare", None)
 
     def test_an_action_cannot_be_wired_to_a_schedule(self):
@@ -62,6 +62,30 @@ class TestDeclaration:
         assert HookAgent("nightly", identifier="live.arkitekt.mikro").signing_identifier() == "live.arkitekt.mikro"
         settings.REKUEST_HOOK = {**settings.REKUEST_HOOK, "IDENTIFIER": "org.example.x"}
         assert HookAgent("mikro").signing_identifier() == "org.example.x"
+
+
+class TestPorts:
+    def test_a_structure_port_is_offered_as_rekuest_spells_it(self):
+        local = HookAgent("ingest")
+
+        @local.action(args=[StructurePort("metric", "@mikro/metric", description="What was written.", nullable=True)])
+        def ingest(organization: str, metric: StructureRef | None = None) -> dict:
+            return {}
+
+        (action,) = local.manifest()["actions"]
+        assert action["args"] == [{"key": "metric", "kind": "STRUCTURE", "identifier": "@mikro/metric", "nullable": True, "description": "What was written."}]
+
+    def test_a_port_must_be_a_parameter_of_the_function(self):
+        with pytest.raises(ValueError, match="does not take"):
+            HookAgent("x").action(args=[StructurePort("metric", "@mikro/metric")])(lambda: {})
+
+    def test_the_organization_is_never_a_port(self):
+        with pytest.raises(ValueError, match="fills it in"):
+            HookAgent("x").action(args=[StructurePort("organization", "@lok/organization")])(lambda organization: {})
+
+    def test_a_port_is_declared_once(self):
+        with pytest.raises(ValueError, match="twice"):
+            HookAgent("x").action(args=[StructurePort("a", "@x/a"), StructurePort("a", "@x/a")])(lambda a: {})
 
 
 class TestEndpoints:
@@ -147,3 +171,43 @@ class TestEndpoints:
         assert Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body)).status_code == 404
         (report,) = intake.wait(1)
         assert report["json"]["type"] == "CRITICAL"
+
+    def test_a_structure_port_is_handed_over_as_a_ref(self, intake):
+        @agent.action(interface="ingest", args=[StructurePort("metric", "@mikro/metric", nullable=True)])
+        def ingest(organization: str, metric: StructureRef | None = None) -> dict:
+            return {"organization": organization, "metric": None if metric is None else [metric.identifier, metric.object]}
+
+        url = reverse("rekuest_hook")
+        given = json.dumps({"type": "ASSIGN", "task": "50", "interface": "ingest", "args": {"metric": {"__identifier": "@mikro/metric", "object": 8812}}, "org": "lab"}).encode()
+        assert Client().post(url, data=given, content_type="application/json", headers=as_rekuest("POST", url, given)).status_code == 202
+        assert intake.wait(3)[1]["json"]["returns"] == {"organization": "lab", "metric": ["@mikro/metric", "8812"]}
+
+    def test_a_left_out_nullable_port_is_none(self, intake):
+        """A schedule's run gives no object: the same action runs with None."""
+
+        @agent.action(interface="ingest_all", args=[StructurePort("metric", "@mikro/metric", nullable=True)])
+        def ingest_all(metric: StructureRef | None = None) -> dict:
+            return {"metric": metric}
+
+        url = reverse("rekuest_hook")
+        body = json.dumps({"type": "ASSIGN", "task": "51", "interface": "ingest_all", "args": {}}).encode()
+        assert Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body)).status_code == 202
+        assert intake.wait(3)[1]["json"]["returns"] == {"metric": None}
+
+    def test_an_object_of_another_structure_is_refused(self, intake):
+        @agent.action(interface="strict", args=[StructurePort("metric", "@mikro/metric")])
+        def strict(metric: StructureRef) -> dict:
+            return {}
+
+        url = reverse("rekuest_hook")
+        for args in ({}, {"metric": {"__identifier": "@mikro/annotation", "object": "1"}}):
+            body = json.dumps({"type": "ASSIGN", "task": "52", "interface": "strict", "args": args}).encode()
+            assert Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body)).status_code == 400
+        assert [r["json"]["type"] for r in intake.wait(2)] == ["CRITICAL", "CRITICAL"]
+
+    def test_undeclared_arguments_are_not_passed_on(self, intake):
+        agent.action(interface="plain")(lambda: {"ran": True})
+        url = reverse("rekuest_hook")
+        body = json.dumps({"type": "ASSIGN", "task": "53", "interface": "plain", "args": {"stray": 1}}).encode()
+        Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body))
+        assert intake.wait(3)[1]["json"]["returns"] == {"ran": True}

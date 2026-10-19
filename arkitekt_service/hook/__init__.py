@@ -30,6 +30,6 @@ Settings::
                            (default live.arkitekt.rekuest), MAX_SKEW (seconds, default 30)
 """
 
-from arkitekt_service.hook.agent import Action, HookAgent
+from arkitekt_service.hook.agent import Action, HookAgent, StructurePort, StructureRef
 
-__all__ = ["Action", "HookAgent"]
+__all__ = ["Action", "HookAgent", "StructurePort", "StructureRef"]

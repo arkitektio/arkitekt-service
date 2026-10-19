@@ -94,12 +94,14 @@ def hook(agent: HookAgent, request: HttpRequest) -> HttpResponse:
         _report(agent, config, agent_id, {"type": "CRITICAL", "task": task, "error": f"No action {message.get('interface')!r} on this agent"})
         return JsonResponse({"error": "Unknown interface"}, status=404)
 
+    # Whose run this is: the organization of the agent rekuest assigned (every organization has its own).
+    try:
+        args = target.arguments(dict(message.get("args") or {}), message.get("org") or None)
+    except ValueError as error:
+        _report(agent, config, agent_id, {"type": "CRITICAL", "task": task, "error": str(error)})
+        return JsonResponse({"error": str(error)}, status=400)
     # A thread, not an event-loop task: it outlives the request under any server (WSGI
     # runserver tears its loop down with the response), and the function may block.
-    args = dict(message.get("args") or {})
-    if target.takes_organization:
-        # Whose run this is: the organization of the agent rekuest assigned (every organization has its own).
-        args["organization"] = message.get("org") or None
     threading.Thread(target=_run, args=(agent, config, agent_id, task, target, args), name=f"rekuest-hook-{task}", daemon=True).start()
     return JsonResponse({"accepted": task}, status=202)
 
