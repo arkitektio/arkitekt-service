@@ -126,6 +126,17 @@ class TestOrder:
         assert [e.object for e in first.entries + second.entries] == ["0", "1", "2", "3", "4"]
 
 
+    def test_a_page_never_ends_inside_a_transaction(self):
+        """A full page is extended by the rest of its last transaction: a reader sees each one whole."""
+        with transaction.atomic():
+            record_changes([created(f"big{i}") for i in range(2500)])
+        with transaction.atomic():
+            record_change(created("next"))
+        first = changes(METRIC, "lab", limit=1000)
+        assert len(first.entries) == 2500 and len({e.xid for e in first.entries}) == 1
+        assert [e.object for e in changes(METRIC, "lab", first.entries[-1].cursor, limit=1000).entries] == ["next"]
+
+
 class TestPublishing:
     def post(self, live_server, body: bytes, key=None, issuer="live.arkitekt.kraph") -> httpx.Response:
         url = f"{live_server.url}/_feed"
@@ -158,8 +169,9 @@ def collect(into: list):
 
 class TestConsuming:
     def test_everything_is_applied_once_and_the_cursor_follows(self, reader):
-        with transaction.atomic():
-            record_changes([created(str(i)) for i in range(25)])
+        for batch in (range(0, 10), range(10, 20), range(20, 25)):  # three transactions, a page each
+            with transaction.atomic():
+                record_changes([created(str(i)) for i in batch])
         applied: list[str] = []
         outcome = apply_pages(reader, "lab", collect(applied), limit=10)
         assert outcome.ended == Ended.CAUGHT_UP and outcome.applied == 25 and outcome.pages == 3

@@ -96,14 +96,43 @@ _PAGE = f"""
 """
 
 
+#: How far a full page is extended to finish the transaction it ends in. A transaction with more
+#: entries than this spans pages, and a reader sees it in parts; producers write in batches far
+#: below it (mikro: 5000 metrics per call).
+MAX_TRANSACTION = 50_000
+
+_REST_OF_TRANSACTION = f"""
+    SELECT e.xid::text, e.id, e.feed, e.kind, e.object, e.uuid, e.organization
+    FROM {FeedEntry._meta.db_table} e
+    WHERE e.feed = %s AND e.organization = %s AND e.xid = %s::xid8 AND e.id > %s
+    ORDER BY e.id
+    LIMIT %s
+"""
+
+
+def _entries(rows: list[tuple]) -> list[Entry]:
+    return [Entry(xid=int(xid), id=id_, feed=f, kind=kind, object=obj, uuid=uid, organization=org) for xid, id_, f, kind, obj, uid, org in rows]
+
+
 def changes(feed: str, organization: str, after: Cursor | None = None, limit: int = 1000) -> Page:
-    """The entries of ``organization`` in ``feed`` after ``after``, of transactions no open one can precede."""
+    """The entries of ``organization`` in ``feed`` after ``after``, of transactions no open one can precede.
+
+    **A page never ends inside a transaction** (up to :data:`MAX_TRANSACTION` entries): a full
+    page is extended by the rest of its last transaction's entries, so a reader that applies a
+    page as one act sees each of the producer's transactions whole. A page may therefore hold
+    more than ``limit`` entries.
+    """
     after = after or Cursor()
     with transaction.atomic(), connection.cursor() as cursor:
         # One snapshot for the page and its horizon: REPEATABLE READ is not needed, the page is
         # a single statement and the horizon is read in the same transaction right after.
         cursor.execute(_PAGE, [feed, organization, str(after.xid), after.id, limit])
-        entries = [Entry(xid=int(xid), id=id_, feed=f, kind=kind, object=obj, uuid=uid, organization=org) for xid, id_, f, kind, obj, uid, org in cursor.fetchall()]
+        entries = _entries(cursor.fetchall())
+        if len(entries) == limit:
+            # Already below the horizon: the transaction is committed, its rest is all there.
+            last = entries[-1]
+            cursor.execute(_REST_OF_TRANSACTION, [feed, organization, str(last.xid), last.id, MAX_TRANSACTION])
+            entries += _entries(cursor.fetchall())
         cursor.execute("SELECT pg_snapshot_xmin(pg_current_snapshot())::text, pg_snapshot_xmax(pg_current_snapshot())::text")
         horizon, current = cursor.fetchone()
     return Page(epoch=epoch(feed), entries=entries, horizon=int(horizon), current_xid=int(current))
