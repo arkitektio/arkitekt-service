@@ -11,7 +11,7 @@ from django.conf import settings as django_settings
 from arkitekt_service import trust
 from test_project.urls import service
 
-REKUEST = "live.arkitekt.rekuest"
+REKUEST = "rekuest"
 
 
 class Intake:
@@ -55,7 +55,7 @@ def intake(settings):
     server.server.shutdown()
 
 
-def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "live.arkitekt.testsvc") -> dict:
+def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "testsvc") -> dict:
     """Headers of a request rekuest sends to the service."""
     return {"Authorization": trust.sign(method, path, body, issuer=REKUEST, audience=audience, key=django_settings.REKUEST_KEY)}
 

@@ -21,8 +21,8 @@ INSTANCE_KEY = OKPKey.generate_key("Ed25519")
 REKUEST_KEY = OKPKey.generate_key("Ed25519")
 TRUST_JWKS = {
     "keys": [
-        {**public_jwk(INSTANCE_KEY), "service": "live.arkitekt.worker"},
-        {**public_jwk(REKUEST_KEY), "service": "live.arkitekt.rekuest"},
+        {**public_jwk(INSTANCE_KEY), "service": "worker"},
+        {**public_jwk(REKUEST_KEY), "service": "rekuest"},
     ]
 }
 INSTANCE = {"PRIVATE_KEY": INSTANCE_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}

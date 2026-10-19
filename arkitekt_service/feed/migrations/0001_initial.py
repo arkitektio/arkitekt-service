@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
             name='FeedCursor',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('producer', models.CharField(help_text="The producer's service identifier: `live.arkitekt.mikro`.", max_length=200)),
+                ('producer', models.CharField(help_text="The producer's name in the hub: `mikro`.", max_length=200)),
                 ('feed', models.CharField(max_length=200)),
                 ('organization', models.CharField(max_length=200)),
                 ('epoch', models.CharField(blank=True, help_text="The producer's epoch this cursor follows; null until the first page.", max_length=200, null=True)),

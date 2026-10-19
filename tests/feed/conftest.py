@@ -39,4 +39,4 @@ def django_db_modify_db_settings(backend_stack):
 @pytest.fixture
 def reader(live_server):
     """kraph reading mikro's metric feed, over HTTP, signed with kraph's key."""
-    return FeedReader(url=f"{live_server.url}/_feed", producer="live.arkitekt.mikro", feed="@mikro/metric", issuer="live.arkitekt.kraph", key=django_settings.READER_KEY)
+    return FeedReader(url=f"{live_server.url}/_feed", producer="mikro", feed="@mikro/metric", issuer="kraph", key=django_settings.READER_KEY)

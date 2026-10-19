@@ -33,7 +33,7 @@ Settings::
     settings.REKUEST_SERVICE  REKUEST_URL (rekuest on the internal network, e.g.
                               http://rekuest:80/rekuest); optional SERVICE (name override),
                               IDENTIFIER (signing identity override), REKUEST_IDENTIFIER
-                              (default live.arkitekt.rekuest), MAX_SKEW (seconds, default 30)
+                              (default rekuest), MAX_SKEW (seconds, default 30)
 """
 
 from arkitekt_service import trust

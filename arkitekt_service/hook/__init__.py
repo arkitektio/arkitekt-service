@@ -27,7 +27,7 @@ Settings::
     settings.REKUEST_HOOK  REKUEST_URL (rekuest on the internal network, e.g.
                            http://rekuest:80/rekuest); optional AGENT (name override),
                            IDENTIFIER (signing identity override), REKUEST_IDENTIFIER
-                           (default live.arkitekt.rekuest), MAX_SKEW (seconds, default 30)
+                           (default rekuest), MAX_SKEW (seconds, default 30)
 """
 
 from arkitekt_service.hook.agent import Action, HookAgent, StructurePort, StructureRef

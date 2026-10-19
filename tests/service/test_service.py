@@ -43,7 +43,7 @@ class TestDeclaration:
         assert Service("testsvc").service_name() == "testsvc-2"
 
     def test_the_identifier_defaults_to_the_fakts_convention(self):
-        assert Service("mikro").identifier == "live.arkitekt.mikro"
+        assert Service("mikro").identifier == "mikro"
         assert Service("x", identifier="org.example.x").identifier == "org.example.x"
 
 
@@ -55,7 +55,7 @@ class TestManifestEndpoint:
         assert url.endswith("_rekuest/service/manifest")
 
         manifest = client.get(url, headers=as_rekuest("GET", url)).json()
-        assert manifest["service"] == "testsvc" and manifest["identifier"] == "live.arkitekt.testsvc"
+        assert manifest["service"] == "testsvc" and manifest["identifier"] == "testsvc"
         assert manifest["signals"] == [{"identifier": "@testsvc/room", "kinds": ["CREATED"], "descriptors": ["@testsvc/area"], "description": None}]
         assert manifest["structures"] == []
 
@@ -67,14 +67,14 @@ class TestManifestEndpoint:
             return client.get(url, headers=headers).status_code
 
         assert get({}) == 401
-        assert get(as_rekuest("GET", url, audience="live.arkitekt.other")) == 401  # for another service
+        assert get(as_rekuest("GET", url, audience="other")) == 401  # for another service
         assert get(as_rekuest("GET", "/elsewhere")) == 401  # signed for another path
         assert get(as_rekuest("POST", url)) == 401  # signed for another method
         # The service's own key, claiming to be rekuest: the bundle says that key is testsvc's.
-        impostor = trust.sign("GET", url, b"", issuer="live.arkitekt.rekuest", audience="live.arkitekt.testsvc")
+        impostor = trust.sign("GET", url, b"", issuer="rekuest", audience="testsvc")
         assert get({"Authorization": impostor}) == 401
         # A key the coord never vouched for.
-        stranger = trust.sign("GET", url, b"", issuer="live.arkitekt.rekuest", audience="live.arkitekt.testsvc", key=OKPKey.generate_key("Ed25519"))
+        stranger = trust.sign("GET", url, b"", issuer="rekuest", audience="testsvc", key=OKPKey.generate_key("Ed25519"))
         assert get({"Authorization": stranger}) == 401
         assert client.post(url, headers=as_rekuest("POST", url)).status_code == 405
         settings.REKUEST_SERVICE = None
@@ -91,7 +91,7 @@ class TestSignals:
 
         (received,) = intake.wait()
         assert received["path"] == "/agi/signal/testsvc"
-        assert received["issuer"] == "live.arkitekt.testsvc"
+        assert received["issuer"] == "testsvc"
         body = received["json"]
         assert (body["kind"], body["identifier"], body["object"], body["organization"]) == ("CREATED", "@testsvc/room", "5", "org")
         assert body["descriptors"] == {"@testsvc/area": 12} and body["provenance"] is None

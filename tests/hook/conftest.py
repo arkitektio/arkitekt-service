@@ -11,7 +11,7 @@ from arkitekt_service import trust
 
 from hook_project.urls import agent
 
-REKUEST = "live.arkitekt.rekuest"
+REKUEST = "rekuest"
 
 
 class Intake:
@@ -55,7 +55,7 @@ def intake(settings):
     server.server.shutdown()
 
 
-def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "live.arkitekt.worker", agent: str = "7") -> dict:
+def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "worker", agent: str = "7") -> dict:
     """Headers of a request rekuest sends to the agent."""
     return {"Authorization": trust.sign(method, path, body, issuer=REKUEST, audience=audience, key=django_settings.REKUEST_KEY), "X-Rekuest-Agent": agent}
 

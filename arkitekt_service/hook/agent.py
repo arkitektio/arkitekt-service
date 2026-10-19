@@ -136,10 +136,10 @@ class HookAgent:
         #: The key this agent signs with; None (the rule) = this instance's key
         #: (``settings.INSTANCE``). Set when one process plays several instances (tests).
         self.key = key
-        #: The fakts identifier of the instance the agent runs in (``iss``) — what the coord's
-        #: trust bundle lists its key under. Defaults to ``live.arkitekt.<name>``; an agent
-        #: named differently from its instance must say whose key it signs with.
-        self.identifier = identifier or f"live.arkitekt.{name}"
+        #: The name of the service the agent runs in (``iss``) — what the hub's trust bundle
+        #: lists its key under. Defaults to ``name``; an agent named differently from the
+        #: service it runs in must say whose key it signs with.
+        self.identifier = identifier or name
         self.description = description
         self._actions: dict[str, Action] = {}
 
@@ -224,7 +224,7 @@ class HookAgent:
     def rekuest_identifier() -> str:
         """Whom rekuest's requests must come from (``settings.REKUEST_HOOK["REKUEST_IDENTIFIER"]``)."""
         config = getattr(settings, "REKUEST_HOOK", None) or {}
-        return config.get("REKUEST_IDENTIFIER") or "live.arkitekt.rekuest"
+        return config.get("REKUEST_IDENTIFIER") or "rekuest"
 
     def agent_name(self) -> str:
         """What rekuest knows the agent by (``rekuest.hook_agents[].name``); ``settings.REKUEST_HOOK["AGENT"]`` overrides the declared name."""

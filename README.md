@@ -12,7 +12,9 @@ What a service of an [Arkitekt](https://arkitekt.live) hub is made with. Its par
 | `arkitekt_service.testing` | A pytest fixture and check that **prove an image** in a hub made for the test. |
 
 They share `arkitekt_service.trust` — no secrets between services: every instance signs with
-its own key and the hub vouches for the public halves — and nothing else. A process uses any of
+its own key, and the hub's trust bundle lists the public halves. A service is named by its name
+in its hub (`mikro`, `rekuest`); every service token also carries the hub's uuid (`hub`, from
+`AUTHENTIKATE["hub"]`), and a service refuses a token of another hub. A process uses any of
 them without the others.
 
 ```
@@ -222,8 +224,8 @@ with transaction.atomic():
     metric = Metric.objects.create(...)
     record_change(Change("@mikro/metric", "CREATED", str(metric.pk), org.slug, uuid=metric.uuid))
 
-publisher = FeedPublisher("live.arkitekt.mikro")
-publisher.feed("@mikro/metric", readers=["live.arkitekt.kraph"], render=render_metrics)
+publisher = FeedPublisher("mikro")
+publisher.feed("@mikro/metric", readers=["kraph"], render=render_metrics)
 urlpatterns = [..., *publisher.urls]  # POST _feed, signed by the reader's instance key
 ```
 
@@ -234,7 +236,7 @@ lost, nothing applied twice, one run at a time:
 from arkitekt_service.feed.consumer import apply_pages
 from arkitekt_service.feed.reader import FeedReader
 
-reader = FeedReader(url=mikro_feed_url, producer="live.arkitekt.mikro", feed="@mikro/metric", issuer="live.arkitekt.kraph")
+reader = FeedReader(url=mikro_feed_url, producer="mikro", feed="@mikro/metric", issuer="kraph")
 apply_pages(reader, "lab", apply=apply_page, budget_s=20)
 ```
 

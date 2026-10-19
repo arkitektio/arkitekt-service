@@ -1,7 +1,7 @@
 """The change feed's tests: a real Postgres (xid8, snapshots), brought up by dokker per run.
 
-One process plays two instances: the producer (``INSTANCE``, live.arkitekt.mikro) and its reader
-(``READER_KEY``, live.arkitekt.kraph), plus a stranger the bundle vouches for but no feed names.
+One process plays two instances: the producer (``INSTANCE``, mikro) and its reader
+(``READER_KEY``, kraph), plus a stranger the bundle vouches for but no feed names.
 """
 
 import os
@@ -36,9 +36,9 @@ READER_KEY = OKPKey.generate_key("Ed25519")
 STRANGER_KEY = OKPKey.generate_key("Ed25519")
 TRUST_JWKS = {
     "keys": [
-        {**public_jwk(PRODUCER_KEY), "service": "live.arkitekt.mikro"},
-        {**public_jwk(READER_KEY), "service": "live.arkitekt.kraph"},
-        {**public_jwk(STRANGER_KEY), "service": "live.arkitekt.stranger"},
+        {**public_jwk(PRODUCER_KEY), "service": "mikro"},
+        {**public_jwk(READER_KEY), "service": "kraph"},
+        {**public_jwk(STRANGER_KEY), "service": "stranger"},
     ]
 }
 INSTANCE = {"PRIVATE_KEY": PRODUCER_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}

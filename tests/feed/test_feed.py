@@ -138,17 +138,17 @@ class TestOrder:
 
 
 class TestPublishing:
-    def post(self, live_server, body: bytes, key=None, issuer="live.arkitekt.kraph") -> httpx.Response:
+    def post(self, live_server, body: bytes, key=None, issuer="kraph") -> httpx.Response:
         url = f"{live_server.url}/_feed"
         headers = {"Content-Type": "application/json"}
         if key is not None:
-            headers["Authorization"] = trust.sign("POST", "/_feed", body, issuer=issuer, audience="live.arkitekt.mikro", key=key)
+            headers["Authorization"] = trust.sign("POST", "/_feed", body, issuer=issuer, audience="mikro", key=key)
         return httpx.post(url, content=body, headers=headers)
 
     def test_only_a_named_reader_reads(self, live_server):
         body = b'{"feed": "@mikro/metric", "organization": "lab", "after": {"xid": "0", "id": 0}, "limit": 10}'
         assert self.post(live_server, body).status_code == 401
-        assert self.post(live_server, body, key=settings.STRANGER_KEY, issuer="live.arkitekt.stranger").status_code == 403
+        assert self.post(live_server, body, key=settings.STRANGER_KEY, issuer="stranger").status_code == 403
         assert self.post(live_server, body, key=settings.READER_KEY).status_code == 200
 
     def test_a_page_carries_what_the_producer_rendered(self, reader):
@@ -187,7 +187,7 @@ class TestConsuming:
 
         def hold():
             with transaction.atomic(), connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ["arkitekt-feed:live.arkitekt.mikro:@mikro/metric:lab"])
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ["arkitekt-feed:mikro:@mikro/metric:lab"])
                 holding.set()
                 release.wait(10)
 
@@ -214,7 +214,7 @@ class TestConsuming:
 
         applied: list[str] = []
         assert apply_pages(reader, "lab", collect(applied)).ended == Ended.HALTED and applied == []
-        resume("live.arkitekt.mikro", METRIC, "lab")
+        resume("mikro", METRIC, "lab")
         assert apply_pages(reader, "lab", collect(applied)).ended == Ended.CAUGHT_UP and applied == ["good", "bad"]
 
     def test_any_other_error_fails_the_run_and_the_next_run_retries(self, reader):

@@ -44,7 +44,7 @@ class TestModelSignals:
         bodies = _bodies(intake, 3)
         assert [b["kind"] for b in bodies] == ["CREATED", "UPDATED", "DELETED"]
         assert all(b["identifier"] == "@things/thing" and b["object"] == str(pk) and b["organization"] == "org" for b in bodies)
-        assert all(r["path"] == "/agi/signal/things" and r["issuer"] == "live.arkitekt.things" for r in intake.received)
+        assert all(r["path"] == "/agi/signal/things" and r["issuer"] == "things" for r in intake.received)
 
     def test_the_signal_carries_what_the_structure_describes(self, intake):
         with transaction.atomic():

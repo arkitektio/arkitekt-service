@@ -69,7 +69,7 @@ class FeedState(models.Model):
 class FeedCursor(models.Model):
     """How far a reader got in one organization's share of a producer's feed, and whether it stopped."""
 
-    producer = models.CharField(max_length=200, help_text="The producer's service identifier: `live.arkitekt.mikro`.")
+    producer = models.CharField(max_length=200, help_text="The producer's name in the hub: `mikro`.")
     feed = models.CharField(max_length=200)
     organization = models.CharField(max_length=200)
     epoch = models.CharField(max_length=200, null=True, blank=True, help_text="The producer's epoch this cursor follows; null until the first page.")

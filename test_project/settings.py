@@ -33,10 +33,10 @@ THINGS_KEY = OKPKey.generate_key("Ed25519")
 BROKEN_KEY = OKPKey.generate_key("Ed25519")
 TRUST_JWKS = {
     "keys": [
-        {**public_jwk(SERVICE_KEY), "service": "live.arkitekt.testsvc"},
-        {**public_jwk(REKUEST_KEY), "service": "live.arkitekt.rekuest"},
-        {**public_jwk(THINGS_KEY), "service": "live.arkitekt.things"},
-        {**public_jwk(BROKEN_KEY), "service": "live.arkitekt.broken"},
+        {**public_jwk(SERVICE_KEY), "service": "testsvc"},
+        {**public_jwk(REKUEST_KEY), "service": "rekuest"},
+        {**public_jwk(THINGS_KEY), "service": "things"},
+        {**public_jwk(BROKEN_KEY), "service": "broken"},
     ]
 }
 INSTANCE = {"PRIVATE_KEY": SERVICE_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}

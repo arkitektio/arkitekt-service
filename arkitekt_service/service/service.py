@@ -154,8 +154,8 @@ class Service:
         #: (``settings.INSTANCE``). Set when one process plays several services (tests).
         self.key = key
         #: The fakts identifier this instance signs as (``iss``) — what the coord's trust bundle
-        #: lists its key under. Defaults to ``live.arkitekt.<name>``.
-        self.identifier = identifier or f"live.arkitekt.{name}"
+        #: lists its key under: its name in the hub (``mikro``) unless given.
+        self.identifier = identifier or name
         self.description = description
         self._signals: dict[str, Signal] = {}
         self._structures: dict[str, Structure] = {}
@@ -543,7 +543,7 @@ class Service:
     def rekuest_identifier() -> str:
         """Whom rekuest's requests must come from (``settings.REKUEST_SERVICE["REKUEST_IDENTIFIER"]``)."""
         config = getattr(settings, "REKUEST_SERVICE", None) or {}
-        return config.get("REKUEST_IDENTIFIER") or "live.arkitekt.rekuest"
+        return config.get("REKUEST_IDENTIFIER") or "rekuest"
 
     def service_name(self) -> str:
         config = getattr(settings, "REKUEST_SERVICE", None) or {}

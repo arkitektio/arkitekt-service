@@ -16,7 +16,7 @@ from tests.hook.conftest import as_rekuest
 class TestDeclaration:
     def test_an_agent_needs_no_service(self):
         local = HookAgent("alone", description="Works alone.")
-        assert local.manifest() == {"agent": "alone", "identifier": "live.arkitekt.alone", "description": "Works alone.", "actions": [], "manifest_version": 2}
+        assert local.manifest() == {"agent": "alone", "identifier": "alone", "description": "Works alone.", "actions": [], "manifest_version": 2}
 
     def test_actions_take_name_and_description_from_the_docstring(self):
         local = HookAgent("doc")
@@ -57,9 +57,9 @@ class TestDeclaration:
         assert HookAgent("worker").agent_name() == "worker-2"
 
     def test_the_identifier_is_the_instances(self, settings):
-        assert HookAgent("mikro").signing_identifier() == "live.arkitekt.mikro"
+        assert HookAgent("mikro").signing_identifier() == "mikro"
         # An agent named otherwise than the instance it runs in says whose key it signs with.
-        assert HookAgent("nightly", identifier="live.arkitekt.mikro").signing_identifier() == "live.arkitekt.mikro"
+        assert HookAgent("nightly", identifier="mikro").signing_identifier() == "mikro"
         settings.REKUEST_HOOK = {**settings.REKUEST_HOOK, "IDENTIFIER": "org.example.x"}
         assert HookAgent("mikro").signing_identifier() == "org.example.x"
 
@@ -96,7 +96,7 @@ class TestEndpoints:
 
         assert client.get(url).status_code == 401
         manifest = client.get(url, headers=as_rekuest("GET", url)).json()
-        assert manifest["agent"] == "worker" and manifest["identifier"] == "live.arkitekt.worker"
+        assert manifest["agent"] == "worker" and manifest["identifier"] == "worker"
         assert [a["interface"] for a in manifest["actions"]] == ["tidy"]
         assert "structures" not in manifest and "signals" not in manifest
 
@@ -109,14 +109,14 @@ class TestEndpoints:
             return client.post(url, data=body, content_type="application/json", headers=headers).status_code
 
         assert post({}) == 401
-        assert post(as_rekuest("POST", url, body, audience="live.arkitekt.other")) == 401  # for another instance
+        assert post(as_rekuest("POST", url, body, audience="other")) == 401  # for another instance
         assert post(as_rekuest("POST", url, b"{}")) == 401  # signed for another body
         assert post(as_rekuest("POST", "/elsewhere", body)) == 401  # signed for another path
         # The instance's own key, claiming to be rekuest: the bundle says that key is the worker's.
-        impostor = trust.sign("POST", url, body, issuer="live.arkitekt.rekuest", audience="live.arkitekt.worker")
+        impostor = trust.sign("POST", url, body, issuer="rekuest", audience="worker")
         assert post({"Authorization": impostor, "X-Rekuest-Agent": "7"}) == 401
         # A key the coord never vouched for.
-        stranger = trust.sign("POST", url, body, issuer="live.arkitekt.rekuest", audience="live.arkitekt.worker", key=OKPKey.generate_key("Ed25519"))
+        stranger = trust.sign("POST", url, body, issuer="rekuest", audience="worker", key=OKPKey.generate_key("Ed25519"))
         assert post({"Authorization": stranger, "X-Rekuest-Agent": "7"}) == 401
         settings.REKUEST_HOOK = None
         assert post(as_rekuest("POST", url, body)) == 503
@@ -131,7 +131,7 @@ class TestEndpoints:
         assert [r["json"]["type"] for r in reports] == ["STARTED", "YIELD", "COMPLETED"]
         assert all(r["path"] == "/agi/http/7" for r in reports)
         assert reports[1]["json"]["returns"] == {"acted": 3}
-        assert all(r["issuer"] == "live.arkitekt.worker" for r in reports)  # signed with the instance key
+        assert all(r["issuer"] == "worker" for r in reports)  # signed with the instance key
 
     def test_an_action_is_told_which_organization_it_runs_for(self, intake):
         agent.action(interface="tidy_org")(lambda organization: {"tidied": organization})

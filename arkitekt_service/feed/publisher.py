@@ -1,7 +1,7 @@
 """Serving a service's feeds to the services allowed to read them.
 
-    publisher = FeedPublisher("live.arkitekt.mikro")
-    publisher.feed("@mikro/metric", readers=["live.arkitekt.kraph"], render=render_metrics)
+    publisher = FeedPublisher("mikro")
+    publisher.feed("@mikro/metric", readers=["kraph"], render=render_metrics)
 
     urlpatterns = [..., *publisher.urls]          # POST <prefix>/_feed
 
@@ -56,7 +56,7 @@ class FeedPublisher:
         self._feeds: dict[str, Published] = {}
 
     def feed(self, feed: str, *, readers: Sequence[str], render: Render | None = None) -> None:
-        """Serve ``feed`` to the services ``readers`` (their identifiers: ``live.arkitekt.kraph``)."""
+        """Serve ``feed`` to the services ``readers`` (their names in the hub: ``kraph``)."""
         if feed in self._feeds:
             raise ValueError(f"The feed {feed!r} is published twice")
         self._feeds[feed] = Published(feed, frozenset(readers), render)

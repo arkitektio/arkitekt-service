@@ -9,8 +9,12 @@ A request from one service to another carries a short-lived JWT::
 
     Authorization: RekuestService <jwt>
     header  {alg: Ed25519, kid: <RFC 7638 thumbprint>, typ: rekuest-service+jwt}
-    claims  {iss: <sender's identifier>, aud: <receiver's identifier>, iat, exp (60 s), jti,
-             htm: <method>, htu: <path>, bh: <base64url sha256 of the body>}
+    claims  {iss: <sender's name>, aud: <receiver's name>, hub: <the hub's uuid>, iat, exp (60 s),
+             jti, htm: <method>, htu: <path>, bh: <base64url sha256 of the body>}
+
+A service is named by its name in its hub (``mikro``, ``rekuest``), so the ``hub`` claim -- the
+uuid the hub generated for itself, ``settings.AUTHENTIKATE["hub"]`` -- is what tells two hubs'
+services apart: a receiver that knows its hub refuses a token minted for another.
 
 A receiver finds ``kid`` in the bundle, requires that key's ``service`` to be the claimed
 ``iss`` (so one service cannot speak as another), and checks ``aud``, the time window, and that
@@ -56,6 +60,13 @@ class TrustError(Exception):
 
 def _instance_settings() -> dict[str, Any]:
     return getattr(settings, "INSTANCE", None) or {}
+
+
+def hub_id() -> str | None:
+    """The hub this process belongs to: the uuid in ``settings.AUTHENTIKATE["hub"]``, or None."""
+    conf = getattr(settings, "AUTHENTIKATE", None)
+    hub = conf.get("hub") if isinstance(conf, dict) else getattr(conf, "hub", None)
+    return str(hub) if hub else None
 
 
 def body_hash(body: bytes) -> str:
@@ -175,10 +186,11 @@ trust_bundle = TrustBundle()
 # --- signing and verifying -------------------------------------------------------------------
 
 
-def sign(method: str, path: str, body: bytes, *, issuer: str, audience: str, key: OKPKey | None = None) -> str:
+def sign(method: str, path: str, body: bytes, *, issuer: str, audience: str, key: OKPKey | None = None, hub: str | None = None) -> str:
     """The ``Authorization`` header value for a request from ``issuer`` to ``audience``.
 
-    Signed with this instance's key, or with ``key`` when given.
+    Signed with this instance's key, or with ``key`` when given, for this process's hub
+    (:func:`hub_id`), or ``hub`` when given.
     """
     key = key or instance_key()
     if key is None:
@@ -194,21 +206,29 @@ def sign(method: str, path: str, body: bytes, *, issuer: str, audience: str, key
         "htu": path,
         "bh": body_hash(body),
     }
+    hub = hub or hub_id()
+    if hub:
+        claims["hub"] = hub
     header = {"alg": ALGORITHM, "kid": key.thumbprint(), "typ": TYP}
     return f"{SCHEME} {jwt.encode(header, claims, key, algorithms=[ALGORITHM])}"
 
 
 @dataclass(frozen=True)
 class Verified:
-    """Who sent a request that verified: the sender's service identifier, and the token's id."""
+    """Who sent a request that verified: the sender's name, the token's id, and the hub it is of."""
 
     issuer: str
     jti: str
     expires_at: int
+    hub: str | None = None
 
 
-def verify(method: str, path: str, body: bytes, authorization: str | None, *, audience: str, max_skew: int = 30) -> Verified:
-    """Check a request's service JWT; the sender, or ``TrustError``."""
+def verify(method: str, path: str, body: bytes, authorization: str | None, *, audience: str, max_skew: int = 30, hub: str | None = None) -> Verified:
+    """Check a request's service JWT; the sender, or ``TrustError``.
+
+    When this process knows its hub (:func:`hub_id`, or ``hub`` when given), the token must be
+    minted for that hub: names are only unique within one.
+    """
     if not authorization or not authorization.startswith(f"{SCHEME} "):
         raise TrustError("No service token")
     token = authorization[len(SCHEME) + 1 :].strip()
@@ -240,7 +260,10 @@ def verify(method: str, path: str, body: bytes, authorization: str | None, *, au
         raise TrustError("Service token was signed for another body")
     if not claims.get("jti"):
         raise TrustError("Service token without an id")
-    return Verified(issuer=issuer, jti=str(claims["jti"]), expires_at=exp)
+    own = hub or hub_id()
+    if own is not None and claims.get("hub") != own:
+        raise TrustError(f"Token is for hub {claims.get('hub')!r}, not this hub")
+    return Verified(issuer=issuer, jti=str(claims["jti"]), expires_at=exp, hub=claims.get("hub"))
 
 
 def _unverified_kid(token: str) -> str | None:

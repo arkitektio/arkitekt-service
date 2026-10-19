@@ -13,8 +13,8 @@ committed one always has its entry::
 
 and serves it to the services allowed to read it (``*publisher.urls``)::
 
-    publisher = FeedPublisher("live.arkitekt.mikro")
-    publisher.feed("@mikro/metric", readers=["live.arkitekt.kraph"], render=render_metrics)
+    publisher = FeedPublisher("mikro")
+    publisher.feed("@mikro/metric", readers=["kraph"], render=render_metrics)
 
 A reader pulls pages after its cursor and applies each page in one transaction with the cursor
 (:func:`arkitekt_service.feed.consumer.apply_pages`): nothing is lost, nothing applied twice.
