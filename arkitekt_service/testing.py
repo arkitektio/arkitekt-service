@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
+from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -43,12 +44,23 @@ if TYPE_CHECKING:
 
 # The hub is made by konstruktor's own fixtures. Loaded here, with this plugin, so that their
 # command-line options exist: a plugin imported once a test runs comes too late for that.
-try:
-    import konstruktor.pytest_plugin  # noqa: F401  # pyright: ignore[reportMissingImports]
-except ImportError:
-    pytest_plugins: list[str] = []
-else:
-    pytest_plugins = ["konstruktor.pytest_plugin"]
+# Installed, konstruktor is a `pytest11` entry point pytest loads by itself, before this
+# module: naming it again would register the one module twice, which pytest refuses.
+_KONSTRUKTOR_PLUGIN = "konstruktor.pytest_plugin"
+
+
+def _konstruktor_plugins() -> list[str]:
+    """konstruktor's plugin, unless it is missing or pytest loads it on its own."""
+    try:
+        import konstruktor.pytest_plugin  # noqa: F401  # pyright: ignore[reportMissingImports]
+    except ImportError:
+        return []
+    if not os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") and any(entry.value == _KONSTRUKTOR_PLUGIN for entry in entry_points(group="pytest11")):
+        return []
+    return [_KONSTRUKTOR_PLUGIN]
+
+
+pytest_plugins = _konstruktor_plugins()
 
 #: Names the image under test, when ``--service-image`` does not.
 IMAGE = "ARKITEKT_SERVICE_IMAGE"
