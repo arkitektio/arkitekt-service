@@ -15,7 +15,9 @@ Behind the gate (:class:`CollaborationGate`), a guest (a member granted collabor
   them): one returning a value computed from many (a lineage graph) is refused before anything
   runs (``COLLABORATION_DOES_NOT_REACH``), unless it opted in (``AuthExtension(allow_scoped=True)``);
 - is handed only what is in their collaborations: an object that is not becomes null, and is dropped from
-  a list (a non-null field errors at its path).
+  a list (a non-null field errors at its path). Who made, runs or owns an object they are handed
+  (authentikate's users, clients and organizations, :data:`IDENTITIES`) comes with it, though it is
+  in no collaboration; at a root field it is not handed out.
 
 ``annotate_schema`` says the service shares (``Service.share``) when the schema is behind the
 gate: its guests are let in. Needs strawberry and authentikate >= 5.
@@ -143,14 +145,32 @@ def _in_loop() -> bool:
     return True
 
 
-def _held(value: Any, guest: Any) -> Any:
+#: authentikate's records of who someone is. Never in a collaboration (put in, an organization
+#: would bring all of it, a user all they made), they are shown where what they are attached to is.
+IDENTITIES = frozenset({"user", "client", "organization"})
+
+
+def _identity(item: Any) -> bool:
+    meta = type(item)._meta
+    return meta.app_label == "authentikate" and meta.model_name in IDENTITIES
+
+
+def _shown(item: Model, guest: Any, parent: Any) -> bool:
+    """Whether the guest is handed ``item``: in their collaborations, or who made, runs or owns what is
+    (a room's creator, an agent's user). An identity is never handed out at a root field."""
+    if not _identity(item):
+        return guest.sees(item)
+    return isinstance(parent, Model) and (_identity(parent) or guest.sees(parent))
+
+
+def _held(value: Any, guest: Any, parent: Any = None) -> Any:
     """``value`` with what is not in the guest's collaborations taken out. Reads the database: call it sync."""
     if isinstance(value, Model):
-        return value if guest.sees(value) else None
+        return value if _shown(value, guest, parent) else None
     if isinstance(value, QuerySet):
         value = list(value)
     if isinstance(value, (list, tuple)):
-        return [item for item in value if not isinstance(item, Model) or guest.sees(item)]
+        return [item for item in value if not isinstance(item, Model) or _shown(item, guest, parent)]
     return value
 
 
@@ -160,12 +180,14 @@ def _hands_out_objects(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and any(isinstance(item, Model) for item in value)
 
 
-def _known(value: Any, guest: Any) -> bool:
-    """Whether holding ``value`` reads nothing: every model in it was read for the guest already."""
+def _known(value: Any, guest: Any, parent: Any = None) -> bool:
+    """Whether holding ``value`` reads nothing: every model in it (or, for an identity, what it is attached to) was read for the guest already."""
     if isinstance(value, QuerySet):
         return False
-    items = value if isinstance(value, (list, tuple)) else [value]
-    return all(guest.knows(type(item)) for item in items if isinstance(item, Model))
+    items = [item for item in (value if isinstance(value, (list, tuple)) else [value]) if isinstance(item, Model)]
+    if any(_identity(item) for item in items) and isinstance(parent, Model) and not _identity(parent) and not guest.knows(type(parent)):
+        return False
+    return all(guest.knows(type(item)) for item in items if not _identity(item))
 
 
 def _after_a_write(info: Any, guest: Any) -> None:
@@ -215,16 +237,16 @@ class CollaborationGate(SchemaExtension):
         if token is None or not token.is_scoped:
             return result
         if isawaitable(result):
-            return self._aheld(result, info, token)
+            return self._aheld(result, root, info, token)
         if not _hands_out_objects(result):
             return result
         guest = guest_of(info, token)
         _after_a_write(info, guest)
-        if _in_loop() and not _known(result, guest):
-            return self._aheld(result, info, token)
-        return _held(result, guest)
+        if _in_loop() and not _known(result, guest, root):
+            return self._aheld(result, root, info, token)
+        return _held(result, guest, root)
 
-    async def _aheld(self, result: Any, info: Any, token: Any) -> Any:
+    async def _aheld(self, result: Any, root: Any, info: Any, token: Any) -> Any:
         from asgiref.sync import sync_to_async
 
         from arkitekt_service.collaborations.guests import guest_of
@@ -234,9 +256,9 @@ class CollaborationGate(SchemaExtension):
             return value
         guest = guest_of(info, token)
         _after_a_write(info, guest)
-        if _known(value, guest):
-            return _held(value, guest)
-        return await sync_to_async(lambda: _held(value, guest))()
+        if _known(value, guest, root):
+            return _held(value, guest, root)
+        return await sync_to_async(lambda: _held(value, guest, root))()
 
 
-__all__ = ["COLLABORATION_DOES_NOT_REACH", "CollaborationGate", "Identified", "annotate_schema", "closed_roots"]
+__all__ = ["COLLABORATION_DOES_NOT_REACH", "IDENTITIES", "CollaborationGate", "Identified", "annotate_schema", "closed_roots"]

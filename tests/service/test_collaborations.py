@@ -11,7 +11,7 @@ strawberry_django = pytest.importorskip("strawberry_django")
 pytest.importorskip("authentikate.models")
 
 from authentikate.errors import ShareInsufficient  # noqa: E402
-from authentikate.models import Organization  # noqa: E402
+from authentikate.models import Organization, User  # noqa: E402
 from strawberry.extensions import SchemaExtension  # noqa: E402
 from strawberry_django.optimizer import DjangoOptimizerExtension  # noqa: E402
 
@@ -48,13 +48,13 @@ def granted(**collaborations: list[str]) -> Token:
 
 @pytest.fixture(autouse=True)
 def lending():
-    """The lending service, sharing: a shelf brings its loans along."""
+    """The lending service, sharing: a shelf brings its loans along, and a loan is shared with its shelf."""
     before = list(Service.sharing)
     Service.sharing.clear()
     service = Service("lending")
     service.structure(Shelf, "@lending/shelf", depends=lambda shelf: list(shelf.loans.all()))
     service.structure(Book, "@lending/book")
-    service.structure(Loan, "@lending/loan")
+    service.structure(Loan, "@lending/loan", whole=lambda loan: loan.shelf)
     service.share()
     yield service
     Service.sharing[:] = before
@@ -134,6 +134,20 @@ class TestWhatIsInASpace:
             guests._references.clear()
             wholes.cache_clear()
 
+    def test_a_part_is_shared_with_its_whole_not_alone(self, library):
+        first = library.shelves[0]
+        with pytest.raises(items.SharedWithItsWhole):
+            items.add(library.collaboration, library.books[0])  # dies with its shelf
+        with pytest.raises(items.SharedWithItsWhole):
+            items.add(library.collaboration, library.loans[0])  # its structure names its shelf (`whole`)
+        assert not library.collaboration.items.exists()
+
+        items.add(library.collaboration, first)
+        items.add(library.collaboration, library.books[0])  # its shelf is in
+        items.add(library.collaboration, Loan.objects.create(shelf=None))  # part of nothing
+        with pytest.raises(items.SharedWithItsWhole):
+            items.add(library.collaboration, library.books[1])  # the other shelf is not
+
     def test_what_a_row_is_part_of(self):
         assert wholes(Book) == ((Shelf, "shelf"),)
         assert wholes(Loan) == ()  # nullable
@@ -209,12 +223,18 @@ class LabelType:
         return object_scope(queryset, info=info)
 
 
+@strawberry_django.type(User)
+class UserType:
+    id: strawberry.auto
+
+
 @strawberry_django.type(Shelf)
 class ShelfType:
     id: strawberry.auto
     name: strawberry.auto
     books: list[BookType]
     labels: list[LabelType]
+    keeper: UserType | None
 
     @strawberry_django.field
     def any_label(self) -> LabelType | None:
@@ -234,6 +254,10 @@ class Count:
 class Query:
     shelves: list[ShelfType] = strawberry_django.field()
     labels: list[LabelType] = strawberry_django.field()
+
+    @strawberry.field
+    def keepers(self) -> list[UserType]:
+        return list(User.objects.all())  # identities at a root field: never a guest's
 
     @strawberry.field
     def tally(self) -> Count:
@@ -275,6 +299,21 @@ def test_a_guest_is_handed_only_what_is_in_their_collaborations(library, lending
     Authenticated.token = Token()  # a full member: as it is
     full = built.execute_sync("{ shelves { id labels { id } } }")
     assert len(full.data["shelves"]) == 2 and all(shelf["labels"] for shelf in full.data["shelves"])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("optimizer", [True, False], ids=["optimized", "plain"])
+def test_who_keeps_what_a_guest_is_handed_comes_with_it(library, optimizer):
+    keeper = User.objects.create(username="keeper", sub="keeper")
+    Shelf.objects.update(keeper=keeper)
+    items.add(library.collaboration, library.shelves[0])
+    Authenticated.token = granted(**{str(library.collaboration.pk): []})
+    built = schema(*([DjangoOptimizerExtension()] if optimizer else []))
+
+    result = built.execute_sync("{ shelves { id keeper { id } } keepers { id } }")
+    assert result.errors is None, result.errors
+    # Below the shelf it keeps, though in no collaboration; at a root field, not.
+    assert result.data == {"shelves": [{"id": str(library.shelves[0].pk), "keeper": {"id": str(keeper.pk)}}], "keepers": []}
 
 
 @pytest.mark.django_db

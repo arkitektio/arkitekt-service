@@ -179,6 +179,7 @@ class Service:
         label: str | None = None,
         description: str | None = None,
         depends: Callable[[Any], Iterable[Any]] | None = None,
+        whole: Callable[[Any], Any] | None = None,
     ) -> Structure:
         """Declare that this service hosts ``model`` as the structure ``identifier``.
 
@@ -199,8 +200,12 @@ class Service:
         scene's datasets, a dataset's stores): put in a collaboration with it
         (:mod:`arkitekt_service.collaborations`). What is part of it comes along by itself.
 
+        An object that is part of another (a message of its room, through a required, cascading
+        key) is shared with that one, never alone: a collaboration refuses it unless its whole is in.
+        ``whole(obj)`` names that whole where no such key does (a lens whose dataset key is nullable).
+
         For a service with a contract (``hosts``), the structure is declared there and this
-        binds it: ``structure(model, identifier, describe=..., depends=...)`` and nothing else.
+        binds it: ``structure(model, identifier, describe=..., depends=..., whole=...)`` and nothing else.
         """
         check_identifier(identifier)
         if self.hosts is not None:
@@ -218,7 +223,7 @@ class Service:
             if label is None and hasattr(model, "_meta"):
                 label = str(model._meta.verbose_name).title()
 
-        declared = Structure(identifier, model, label, description, declared_descriptors, describe, depends)
+        declared = Structure(identifier, model, label, description, declared_descriptors, describe, depends, whole)
         existing = self._structures.get(identifier)
         if existing is not None:
             if existing.model is not model or existing.manifest() != declared.manifest():

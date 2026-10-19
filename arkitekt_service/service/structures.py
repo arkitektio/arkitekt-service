@@ -69,6 +69,8 @@ class Structure:
     describer: Callable[[Any], dict[str, Any]] | None
     #: What an object needs besides its parts to be seen, put in a collaboration along with it.
     depends: Callable[[Any], Iterable[Any]] | None = field(default=None, compare=False)
+    #: What an object is shared with, when no required, cascading key says so: a lens's dataset.
+    whole: Callable[[Any], Any] | None = field(default=None, compare=False)
 
     def dependencies(self, obj: Any) -> list[Any]:
         """What ``obj`` needs to be seen, besides what is part of it: ``depends(obj)``, Nones dropped."""
