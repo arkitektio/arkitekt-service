@@ -157,10 +157,11 @@ def _identity(item: Any) -> bool:
 
 def _shown(item: Model, guest: Any, parent: Any) -> bool:
     """Whether the guest is handed ``item``: in their collaborations, or who made, runs or owns what is
-    (a room's creator, an agent's user). An identity is never handed out at a root field."""
+    (a room's creator, an agent's user). An identity is never handed out at a root field, nor through
+    another identity: a creator's active organization is theirs, not the collaboration's."""
     if not _identity(item):
         return guest.sees(item)
-    return isinstance(parent, Model) and (_identity(parent) or guest.sees(parent))
+    return isinstance(parent, Model) and not _identity(parent) and guest.sees(parent)
 
 
 def _held(value: Any, guest: Any, parent: Any = None) -> Any:

@@ -223,9 +223,15 @@ class LabelType:
         return object_scope(queryset, info=info)
 
 
+@strawberry_django.type(Organization)
+class OrganizationType:
+    id: strawberry.auto
+
+
 @strawberry_django.type(User)
 class UserType:
     id: strawberry.auto
+    active_organization: OrganizationType | None
 
 
 @strawberry_django.type(Shelf)
@@ -304,16 +310,22 @@ def test_a_guest_is_handed_only_what_is_in_their_collaborations(library, lending
 @pytest.mark.django_db
 @pytest.mark.parametrize("optimizer", [True, False], ids=["optimized", "plain"])
 def test_who_keeps_what_a_guest_is_handed_comes_with_it(library, optimizer):
-    keeper = User.objects.create(username="keeper", sub="keeper")
+    elsewhere = Organization.objects.create(slug="elsewhere")
+    keeper = User.objects.create(username="keeper", sub="keeper", active_organization=elsewhere)
     Shelf.objects.update(keeper=keeper)
     items.add(library.collaboration, library.shelves[0])
     Authenticated.token = granted(**{str(library.collaboration.pk): []})
     built = schema(*([DjangoOptimizerExtension()] if optimizer else []))
 
-    result = built.execute_sync("{ shelves { id keeper { id } } keepers { id } }")
+    result = built.execute_sync("{ shelves { id keeper { id activeOrganization { id } } } keepers { id } }")
     assert result.errors is None, result.errors
-    # Below the shelf it keeps, though in no collaboration; at a root field, not.
-    assert result.data == {"shelves": [{"id": str(library.shelves[0].pk), "keeper": {"id": str(keeper.pk)}}], "keepers": []}
+    # Below the shelf it keeps, though in no collaboration; at a root field, not; and where the
+    # keeper is at work is theirs, not the collaboration's.
+    assert result.data == {"shelves": [{"id": str(library.shelves[0].pk), "keeper": {"id": str(keeper.pk), "activeOrganization": None}}], "keepers": []}
+
+    Authenticated.token = Token()  # a full member: as it is
+    full = built.execute_sync("{ shelves { keeper { activeOrganization { id } } } }")
+    assert full.data["shelves"][0]["keeper"]["activeOrganization"] == {"id": str(elsewhere.pk)}
 
 
 @pytest.mark.django_db
