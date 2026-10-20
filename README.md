@@ -65,7 +65,7 @@ prints it on one line, in the service's checkout, for `docker/build-push-action`
 
 ```yaml
 - id: describe
-  uses: arkitektio/arkitekt-service/.github/actions/describe-label@v7.1.1
+  uses: arkitektio/arkitekt-service/.github/actions/describe-label@v7.1.2
   with:
     service: mikro_server.contract   # the image's ARKITEKT_SERVICE
 - uses: docker/build-push-action@v5
