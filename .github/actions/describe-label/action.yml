@@ -34,7 +34,11 @@ runs:
         ARKITEKT_SOURCE_REVISION: ${{ github.sha }}
       # build-push-action reads `labels:` as CSV, where an unquoted JSON value loses quotes
       # silently. The whole line is quoted, its own quotes doubled, so it arrives as printed.
+      # `describe`, which every release of arkitekt-service has, rather than `label`: the
+      # service's own lock decides which one runs here. Compacted to the one line a label is.
       run: |
         uv sync --frozen --no-dev --quiet
-        label="$(uv run --no-sync arkitekt-service label)"
+        description="$(uv run --no-sync arkitekt-service describe 2>/dev/null \
+          | uv run --no-sync python -c 'import json, sys; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')"
+        label="live.arkitekt.service=${description}"
         echo "label=\"${label//\"/\"\"}\"" >> "$GITHUB_OUTPUT"
