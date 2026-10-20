@@ -1,0 +1,37 @@
+name: Describe the service as an image label
+description: >
+  The service's description (`arkitekt-service describe`) as the `live.arkitekt.service` image
+  label, for docker/build-push-action's `labels:`. An installer reads it from the registry
+  instead of pulling the image to run it. Run in a checkout of the service, at the commit the
+  image is built from.
+inputs:
+  service:
+    description: The module holding the service's contract, as the image's ARKITEKT_SERVICE names it (e.g. mikro_server.contract).
+    required: true
+  python-version:
+    description: The Python the service runs on.
+    default: "3.12"
+outputs:
+  label:
+    description: One `live.arkitekt.service=<JSON>` line.
+    value: ${{ steps.label.outputs.label }}
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Describe
+      id: label
+      shell: bash
+      env:
+        ARKITEKT_SERVICE: ${{ inputs.service }}
+        # What the release build passes the image as build arguments, so the label says what
+        # the image would: where its code came from.
+        ARKITEKT_SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+        ARKITEKT_SOURCE_REVISION: ${{ github.sha }}
+      run: |
+        uv sync --frozen --no-dev --quiet
+        label="$(uv run --no-sync arkitekt-service label)"
+        echo "label=${label}" >> "$GITHUB_OUTPUT"

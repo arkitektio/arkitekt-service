@@ -34,6 +34,7 @@ arkitekt-service run <job>            # any other job it offers: plan, superuser
 arkitekt-service standalone           # run migrate, then serve: one image, run on its own
 arkitekt-service render               # this release's config, from the hub's facts
 arkitekt-service check                # does this release read a config as written?
+arkitekt-service label                # the description as an image label, for the build
 ```
 
 An installer (Konstruktor) then needs to know the hub, and nothing about a service that the
@@ -55,6 +56,24 @@ inside: every other command it runs is one the answer named. A service written i
 language takes part by printing the same description as its own command. Whoever starts the
 image by hand gets the description too, and beside it, on stderr, a note saying that nothing
 is being served and what to run instead.
+
+Running it means pulling the image first, gigabytes before anyone has agreed to anything. So
+the release build stamps the same description into the image as a label,
+`live.arkitekt.service`, and an installer reads that from the registry — the image's config,
+a few kilobytes — and runs the image only when it has no label. `arkitekt-service label`
+prints it on one line, in the service's checkout, for `docker/build-push-action`:
+
+```yaml
+- id: describe
+  uses: arkitektio/arkitekt-service/.github/actions/describe-label@v7.1.0
+  with:
+    service: mikro_server.contract   # the image's ARKITEKT_SERVICE
+- uses: docker/build-push-action@v5
+  with:
+    labels: |
+      ${{ steps.meta.outputs.labels }}
+      ${{ steps.describe.outputs.label }}
+```
 
 What the description says:
 

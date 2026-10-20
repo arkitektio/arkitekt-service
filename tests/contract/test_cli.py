@@ -49,6 +49,21 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert said["requires"] == {"rekuest": ">=6"} and said["upgrade_from"] == "1.0.0"
 
 
+def test_label_is_the_description_on_one_line_for_a_build_to_stamp(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example")
+    monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "3f2a9c1d")
+    assert cli.main(["describe"]) == 0
+    described = json.loads(capsys.readouterr().out)
+
+    assert cli.main(["label"]) == 0
+    printed = capsys.readouterr().out
+    assert printed.count("\n") == 1
+    key, value = printed.strip().split("=", 1)
+    assert key == "live.arkitekt.service"
+    assert json.loads(value) == described
+    assert described["source"]["revision"] == "3f2a9c1d"
+
+
 def test_render_writes_the_releases_config_from_the_hubs_facts(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     facts = written(tmp_path, "facts.yaml", FACTS)
 

@@ -7,6 +7,13 @@
     note on stderr saying what to run instead. An image that cannot answer this has no contract, and an installer treats it as it
     treated images before there was one.
 
+``label``
+    Prints the same description as one image label, ``live.arkitekt.service=<JSON>``, on one
+    line: what a build stamps into the image (docker/build-push-action's ``labels:``), so that
+    an installer reads it from the registry — a few kilobytes — instead of pulling the image to
+    run it. Run where the service's code is, with the ``ARKITEKT_SOURCE_*`` the image is built
+    with, it is what the image would print.
+
 ``render [--facts FILE] [--overrides FILE]``
     Prints this release's config, as YAML, written from a hub's facts (``/hub/facts.yaml``)
     with what the hub's operator set laid over it (``/hub/overrides.yaml``, if there). The
@@ -55,7 +62,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from arkitekt_service.contract.contract import MIGRATE, PLAN, SUPERUSER, Contract, Refused, Start, load
+from arkitekt_service.contract.contract import LABEL, MIGRATE, PLAN, SUPERUSER, Contract, Refused, Start, load
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
@@ -242,6 +249,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="arkitekt-service", description="What this service's image answers a hub's installer.")
     verbs = parser.add_subparsers(dest="verb")
     verbs.add_parser("describe", help="What the service is, needs and offers, and what to run in its image, as JSON. The default.")
+    verbs.add_parser("label", help="The description as an image label, for a build to stamp into the image.")
     rendering = verbs.add_parser("render", help="This release's config, from a hub's facts.")
     rendering.add_argument("--facts", type=Path, default=Path(FACTS))
     rendering.add_argument("--overrides", type=Path, default=Path(OVERRIDES))
@@ -268,6 +276,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             said = contract.said()
             print(said.model_dump_json(indent=2))
             notice(said)
+        elif verb == "label":
+            print(f"{LABEL}={contract.said().model_dump_json()}")
         elif verb == "render":
             facts: Path = asked.facts  # pyright: ignore[reportAny]
             overrides: Path = asked.overrides  # pyright: ignore[reportAny]
