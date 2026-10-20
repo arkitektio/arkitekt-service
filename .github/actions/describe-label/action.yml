@@ -13,7 +13,8 @@ inputs:
     default: "3.12"
 outputs:
   label:
-    description: One `live.arkitekt.service=<JSON>` line.
+    description: >
+      One `live.arkitekt.service=<JSON>` line, quoted for build-push-action's `labels:`.
     value: ${{ steps.label.outputs.label }}
 runs:
   using: composite
@@ -31,7 +32,9 @@ runs:
         # the image would: where its code came from.
         ARKITEKT_SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
         ARKITEKT_SOURCE_REVISION: ${{ github.sha }}
+      # build-push-action reads `labels:` as CSV, where an unquoted JSON value loses quotes
+      # silently. The whole line is quoted, its own quotes doubled, so it arrives as printed.
       run: |
         uv sync --frozen --no-dev --quiet
         label="$(uv run --no-sync arkitekt-service label)"
-        echo "label=${label}" >> "$GITHUB_OUTPUT"
+        echo "label=\"${label//\"/\"\"}\"" >> "$GITHUB_OUTPUT"
