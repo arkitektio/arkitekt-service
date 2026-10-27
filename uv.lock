@@ -222,7 +222,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "authentikate", marker = "extra == 'authentikate'", specifier = ">=5" },
+    { name = "authentikate", marker = "extra == 'authentikate'", specifier = ">=6" },
     { name = "django", specifier = ">=5" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "joserfc", specifier = ">=1.7" },
@@ -265,7 +265,7 @@ wheels = [
 
 [[package]]
 name = "authentikate"
-version = "5.0.0"
+version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django" },
@@ -275,9 +275,9 @@ dependencies = [
     { name = "kante" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/07/2d3b7e3d528271f0351dcc14ea45847e60c0afc25fbe43e4abb99cbdba35/authentikate-5.0.0.tar.gz", hash = "sha256:141abde928c73149dcfe1cb59982475cec895406acd4ee09f0e8620bbac20893", size = 51244, upload-time = "2026-10-18T18:26:44.347Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/92/ab6faba337c57c6063559caf38c67704c17ec1aa8b239127dba84f784779/authentikate-6.0.0.tar.gz", hash = "sha256:26a8e6fcb3744cf3a0f6afee77236ea0d688b8dcca60dc1b5a790dbb56dd9241", size = 52308, upload-time = "2026-10-27T11:54:02.317Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/17/a3a5c8c782c266be82bf36d2fe78167a354d80df1b6be0f8a45e0bdd6641/authentikate-5.0.0-py3-none-any.whl", hash = "sha256:c38f46ac97e81e75ff0c79981a55c4c2f55d4ec4471328e425de119821651d45", size = 63869, upload-time = "2026-10-18T18:26:42.912Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/b2/503ec94badc01ad4b524022c25149803b8a749211ce71da07bca3028c4ed/authentikate-6.0.0-py3-none-any.whl", hash = "sha256:7d46dbff40fe882fa8fe3e1e3fab0870fcdf6658d8cab9d595746dfd6ae53f4e", size = 65227, upload-time = "2026-10-27T11:54:01.377Z" },
 ]
 
 [[package]]

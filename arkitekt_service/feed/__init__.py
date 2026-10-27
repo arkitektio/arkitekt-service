@@ -9,7 +9,7 @@ committed one always has its entry::
 
     with transaction.atomic():
         metric = Metric.objects.create(...)
-        record_change(Change("@mikro/metric", "CREATED", str(metric.pk), organization.slug, uuid=metric.uuid))
+        record_change(Change("@mikro/metric", "CREATED", str(metric.pk), organization.identifier, uuid=metric.uuid))
 
 and serves it to the services allowed to read it (``*publisher.urls``)::
 

@@ -12,7 +12,7 @@
 
     # ... or an event that is not a model's save or delete:
     imported = service.signal("@mikro/arraydataset", kinds=["CREATED"], descriptors=ARRAY_DESCRIPTOR_KEYS)
-    imported.emit(dataset.pk, organization=dataset.organization.slug, descriptors={...})
+    imported.emit(dataset.pk, organization=dataset.organization.identifier, descriptors={...})
 
 and in ``urls.py``: ``urlpatterns = [..., *service.urls]``. The endpoint is bound to THIS service,
 so what the manifest lists is exactly what the declaration says. rekuest reads that manifest
@@ -88,7 +88,8 @@ class SignalDeclaration:
 
 def organization_of(path: str = "organization") -> Callable[[Any], str | None]:
     """An ``organization=`` for :meth:`Service.model_signal`: follow ``path`` (dotted, e.g.
-    ``"room.organization"``) from the object to its organization and take its slug."""
+    ``"room.organization"``) from the object to its organization and take its identifier
+    (``"<iss>#<org>"``, the same in every service)."""
     steps = path.split(".")
 
     def resolve(obj: Any) -> str | None:
@@ -96,7 +97,7 @@ def organization_of(path: str = "organization") -> Callable[[Any], str | None]:
             obj = getattr(obj, step, None)
             if obj is None:
                 return None
-        return getattr(obj, "slug", None)
+        return getattr(obj, "identifier", None)
 
     return resolve
 
@@ -422,7 +423,7 @@ class Service:
         ``structure`` is one this service hosts (what :meth:`structure` returned, or its model).
         No ``emit`` in the mutations: a save that creates the row is CREATED, any other save
         UPDATED (so ``update_or_create`` upserts are told apart for free), a delete DELETED;
-        kinds not listed are not sent. ``organization(obj)`` names the organization (its slug);
+        kinds not listed are not sent. ``organization(obj)`` names the organization (its identifier);
         ``when(obj, kind)`` may veto (privacy, half-written rows).
 
         The signal carries the structure's descriptors as they are stored. ``descriptors``

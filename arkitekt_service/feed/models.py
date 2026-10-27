@@ -44,7 +44,7 @@ class FeedEntry(models.Model):
         DELETED = "DELETED"
 
     feed = models.CharField(max_length=200, help_text="What changed, as a structure identifier: `@mikro/metric`.")
-    organization = models.CharField(max_length=200, help_text="The slug of the organization the object belongs to; a reader reads one organization's entries.")
+    organization = models.CharField(max_length=200, help_text="The identifier of the organization the object belongs to (`<iss>#<org>`); a reader reads one organization's entries.")
     kind = models.CharField(max_length=16, choices=Kind.choices)
     object = models.CharField(max_length=200, help_text="The id of the object in its structure, as signals spell it.")
     uuid = models.UUIDField(null=True, blank=True, help_text="The object's stable uuid, when it has one: what a reader keys on.")

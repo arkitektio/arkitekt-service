@@ -62,7 +62,7 @@ def lending():
 
 @pytest.fixture
 def library(db):
-    organization = Organization.objects.create(slug="org")
+    organization = Organization.objects.create(identifier="lok#org")
     first, second = Shelf.objects.create(name="first"), Shelf.objects.create(name="second")
     books = [Book.objects.create(shelf=first), Book.objects.create(shelf=second)]
     loans = [Loan.objects.create(shelf=first), Loan.objects.create(shelf=second)]
@@ -156,7 +156,7 @@ class TestWhatIsInASpace:
 
 class TestAGuest:
     def test_only_collaborations_of_the_organization_hold_anything(self, library):
-        elsewhere = Collaboration.objects.create(organization=Organization.objects.create(slug="other"), name="Elsewhere")
+        elsewhere = Collaboration.objects.create(organization=Organization.objects.create(identifier="lok#other"), name="Elsewhere")
         items.add(elsewhere, library.shelves[1])
         seen = guest(library, granted(**{str(elsewhere.pk): ["editor"]}))
         assert not seen.sees(library.shelves[1])
@@ -310,7 +310,7 @@ def test_a_guest_is_handed_only_what_is_in_their_collaborations(library, lending
 @pytest.mark.django_db
 @pytest.mark.parametrize("optimizer", [True, False], ids=["optimized", "plain"])
 def test_who_keeps_what_a_guest_is_handed_comes_with_it(library, optimizer):
-    elsewhere = Organization.objects.create(slug="elsewhere")
+    elsewhere = Organization.objects.create(identifier="lok#elsewhere")
     keeper = User.objects.create(username="keeper", sub="keeper", active_organization=elsewhere)
     Shelf.objects.update(keeper=keeper)
     items.add(library.collaboration, library.shelves[0])

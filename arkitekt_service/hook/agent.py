@@ -17,7 +17,7 @@ often sits in the process of a service is where it runs, not what it is.
 
 rekuest reads the agent's manifest (``GET <hook_url>/manifest``), gives every organization of the
 hub the agent and registers its actions as real actions. So an action runs for one organization:
-a function that takes ``organization`` is given its slug and does that organization's share of
+a function that takes ``organization`` is given its identifier (``"<iss>#<org>"``) and does that organization's share of
 the work, nothing else.
 
 An action may take a structure: ``@agent.action(args=[StructurePort("metric", "@mikro/metric")])``
@@ -77,7 +77,7 @@ class Action:
 
     @property
     def takes_organization(self) -> bool:
-        """Whether the function asks for the ``organization`` (slug) the run is for."""
+        """Whether the function asks for the ``organization`` (identifier) the run is for."""
         return ORGANIZATION in inspect.signature(self.function).parameters
 
     def manifest(self) -> dict[str, Any]:

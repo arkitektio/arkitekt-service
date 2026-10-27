@@ -116,11 +116,11 @@ class TestDeclaration:
             local.model_signal(thing, organization=lambda part: "org")  # another service's
 
 
-def test_organization_of_follows_a_path_to_the_slug():
+def test_organization_of_follows_a_path_to_the_identifier():
     from types import SimpleNamespace
 
     from arkitekt_service.service import organization_of
 
-    message = SimpleNamespace(room=SimpleNamespace(organization=SimpleNamespace(slug="lab")))
-    assert organization_of("room.organization")(message) == "lab"
+    message = SimpleNamespace(room=SimpleNamespace(organization=SimpleNamespace(identifier="lok#lab")))
+    assert organization_of("room.organization")(message) == "lok#lab"
     assert organization_of("room.organization")(SimpleNamespace(room=None)) is None

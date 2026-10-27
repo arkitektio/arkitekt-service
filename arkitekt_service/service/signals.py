@@ -3,7 +3,7 @@
 Declare and emit through a :class:`arkitekt_service.service.Service`::
 
     dataset_created = service.signal("@mikro/arraydataset", kinds=["CREATED"], descriptors=[...])
-    dataset_created.emit(dataset.pk, organization=dataset.organization.slug, descriptors={...})
+    dataset_created.emit(dataset.pk, organization=dataset.organization.identifier, descriptors={...})
 
 rekuest matches the signal against its users' triggers and runs their actions on the object.
 When this runs inside a request that carried a provenance token (the service was called in a
