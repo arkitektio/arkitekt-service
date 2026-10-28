@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
-from arkitekt_service.contract import cli
+from arkitekt_service.contract import Description, Needs, Role, Scope, cli
 
 FACTS = {
     "me": {"name": "example", "path": "example", "url": "http://example:80/example", "identifier": "live.arkitekt.example", "secret_key": "s3cret"},
@@ -424,3 +425,49 @@ def test_what_a_service_hosts_is_part_of_what_its_image_says(capsys: pytest.Capt
     said = json.loads(capsys.readouterr().out)
     assert said["hosts"] == {"structures": [], "signals": []}
     assert said["source"] is None
+
+
+SCOPES = [
+    Scope(key="pair_read", description="See the pairs you made."),
+    Scope(key="pair_all", description="Do everything with pairs on your behalf.", is_all_scope=True),
+]
+ROLES = [
+    Role(key="pair_admin", description="Full control of pairs in this organization.", is_admin_role=True),
+    Role(key="pair_editor", description="Make and change pairs.", is_default_role=True),
+]
+
+
+def test_a_service_says_which_scope_and_role_stand_for_all_of_it() -> None:
+    said = Description(name="pair", identifier="live.arkitekt.pair", needs=Needs(scopes=SCOPES, roles=ROLES))
+    assert (said.all_scope, said.admin_role) == ("pair_all", "pair_admin")
+    assert Description(name="pair", identifier="live.arkitekt.pair").all_scope is None
+
+
+@pytest.mark.parametrize(
+    ("needs", "complaint"),
+    [
+        (Needs(scopes=[Scope(key="read", description="See the pairs you made.", is_all_scope=True)]), "is not pair's"),
+        (Needs(scopes=[Scope(key="other_all", description="Do everything with pairs.", is_all_scope=True)]), "is not pair's"),
+        (Needs(scopes=SCOPES[:1]), "exactly one of them is its all-scope"),
+        (Needs(scopes=[*SCOPES, Scope(key="pair_everything", description="Do everything else as well.", is_all_scope=True)]), "exactly one of them is its all-scope"),
+        (Needs(roles=ROLES[1:]), "exactly one of them is its admin role"),
+        (Needs(roles=[*ROLES, Role(key="pair_member", description="Look at pairs and comment.", is_default_role=True)]), "more than one role every member holds"),
+        (Needs(scopes=[*SCOPES, SCOPES[0]]), "declared twice"),
+    ],
+)
+def test_scopes_and_roles_are_the_services_own_with_one_catch_all_each(needs: Needs, complaint: str) -> None:
+    with pytest.raises(ValidationError, match=complaint):
+        Description(name="pair", identifier="live.arkitekt.pair", needs=needs)
+
+
+@pytest.mark.parametrize("description", ["", "read", "lets you read stuff."])
+def test_a_scope_or_role_is_described_in_a_sentence(description: str) -> None:
+    with pytest.raises(ValidationError, match="full sentence"):
+        Scope(key="pair_read", description=description)
+    with pytest.raises(ValidationError, match="full sentence"):
+        Role(key="pair_editor", description=description)
+
+
+def test_a_role_cannot_be_the_admin_role_and_every_members() -> None:
+    with pytest.raises(ValidationError, match="cannot be both"):
+        Role(key="pair_admin", description="Full control of pairs.", is_admin_role=True, is_default_role=True)

@@ -22,7 +22,7 @@ service says, and :mod:`arkitekt_service.contract.cli` for the verbs and their e
 
 from arkitekt_service.contract import blocks
 from arkitekt_service.contract.contract import Contract, Job, Refused, Start
-from arkitekt_service.contract.description import Description, Descriptor, Hosts, Needs, Offers, Scope, Sidecar, Signal, Source, Structure
+from arkitekt_service.contract.description import Description, Descriptor, Hosts, Needs, Offers, Role, Scope, Sidecar, Signal, Source, Structure
 from arkitekt_service.contract.facts import Facts, Peer
 from arkitekt_service.contract.json_types import JSON
 
@@ -38,6 +38,7 @@ __all__ = [
     "Offers",
     "Peer",
     "Refused",
+    "Role",
     "Scope",
     "Sidecar",
     "Signal",

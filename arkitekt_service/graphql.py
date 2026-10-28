@@ -68,9 +68,54 @@ def _model_of(graphql_type: Any) -> Any:
     return getattr(django, "model", None)
 
 
+def _declare_catch_alls() -> None:
+    """Tell authentikate which of the contract's scopes and roles stand for all of this service."""
+    from authentikate.catch_alls import declare_catch_alls
+
+    from arkitekt_service.contract.contract import load
+
+    try:
+        said = load().description
+    except LookupError:
+        # A process that is no service of a hub's contract (a test project): nothing stands for all.
+        return
+    declare_catch_alls(scope=said.all_scope, role=said.admin_role)
+
+
+def scope_gaps(schema: Any) -> list[str]:
+    """The root fields of ``schema`` that ask for no scope, or for one the contract does not declare.
+
+    Every query, mutation and subscription says which scope an app needs for it
+    (``AuthExtension(scopes=...)``): that is what ``@auth(required_scopes: ...)`` publishes, and what a
+    generated client gathers into the scopes its apps ask for. Empty when each does.
+    """
+    from authentikate.strawberry.directives import Auth
+
+    from arkitekt_service.contract.contract import load
+
+    declared = {scope.key for scope in load().description.needs.scopes}
+    core: GraphQLSchema = schema._schema
+    gaps: list[str] = []
+    for root in (core.query_type, core.mutation_type, core.subscription_type):
+        if root is None:
+            continue
+        for name, field in root.fields.items():
+            if name.startswith("_"):
+                continue
+            definition = (field.extensions or {}).get(DEFINITION)
+            auths = [d for d in getattr(definition, "directives", None) or () if isinstance(d, Auth)]
+            required = [scope for auth in auths for scope in (auth.required_scopes or ())]
+            if not required:
+                gaps.append(f"{root.name}.{name} asks for no scope")
+            gaps.extend(f"{root.name}.{name} asks for `{scope}`, which the contract does not declare" for scope in required if scope not in declared)
+    return gaps
+
+
 def annotate_schema(schema: Any, service: Any) -> Any:
     """Say on ``schema`` which structure each type is (``@identified``); behind the gate, say
-    ``service`` lets guests in. Returns the schema."""
+    ``service`` lets guests in; tell authentikate the contract's catch-all scope and role.
+    Returns the schema."""
+    _declare_catch_alls()
     core: GraphQLSchema = schema._schema
     for graphql_type in core.type_map.values():
         if not isinstance(graphql_type, GraphQLObjectType) or graphql_type.name.startswith("__"):

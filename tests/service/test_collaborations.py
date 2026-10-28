@@ -12,6 +12,7 @@ pytest.importorskip("authentikate.models")
 
 from authentikate.errors import ShareInsufficient  # noqa: E402
 from authentikate.models import Organization, User  # noqa: E402
+from authentikate.strawberry.directives import AuthExtension  # noqa: E402
 from strawberry.extensions import SchemaExtension  # noqa: E402
 from strawberry_django.optimizer import DjangoOptimizerExtension  # noqa: E402
 
@@ -369,3 +370,39 @@ def test_a_guest_reads_again_once_a_collaboration_changed(library, in_organizati
     assert not seen.sees(library.shelves[0])
     items.add(library.collaboration, library.shelves[0])
     assert seen.sees(library.shelves[0]) and seen.sees(library.books[0])
+
+
+@strawberry.type
+class Scoped:
+    @strawberry.field(extensions=[AuthExtension(scopes=["example_read"])])
+    def read(self) -> int:
+        return 1
+
+    @strawberry.field(extensions=[AuthExtension(scopes=["example_write"])])
+    def undeclared(self) -> int:
+        return 2
+
+    @strawberry.field(extensions=[AuthExtension()])
+    def unscoped(self) -> int:
+        return 3
+
+
+def test_the_contracts_catch_alls_are_told_to_authentikate(monkeypatch):
+    from authentikate.catch_alls import catch_alls, declare_catch_alls
+
+    monkeypatch.setenv("ARKITEKT_SERVICE", "tests.contract.example")
+    try:
+        annotate_schema(strawberry.Schema(query=Query), Service("example"))
+        assert (catch_alls().scope, catch_alls().role) == ("example_all", "example_admin")
+    finally:
+        declare_catch_alls(scope=None, role=None)
+
+
+def test_every_root_field_asks_for_a_scope_the_contract_declares(monkeypatch):
+    from arkitekt_service.graphql import scope_gaps
+
+    monkeypatch.setenv("ARKITEKT_SERVICE", "tests.contract.example")
+    assert scope_gaps(strawberry.Schema(query=Scoped)) == [
+        "Scoped.undeclared asks for `example_write`, which the contract does not declare",
+        "Scoped.unscoped asks for no scope",
+    ]

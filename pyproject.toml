@@ -25,7 +25,7 @@ arkitekt-service = "arkitekt_service.contract.cli:main"
 koherent = ["koherent>=4.1"]
 # Collaborations (arkitekt_service.collaborations: what a guest is let in to) and the gate in arkitekt_service.graphql
 # read the request's token, and tell authentikate its guests are served here; without it, guests stay out.
-authentikate = ["authentikate>=6"]
+authentikate = ["authentikate>=6.1"]
 
 [dependency-groups]
 dev = [

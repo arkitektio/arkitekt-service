@@ -7,7 +7,7 @@ import os
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Refused, Start
+from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Refused, Role, Scope, Start
 
 
 class Django(BaseModel):
@@ -66,7 +66,19 @@ contract = Contract(
     description=Description(
         name="example",
         identifier="live.arkitekt.example",
-        needs=Needs(storage=["media"], instance_key=True, peers=["rekuest"]),
+        needs=Needs(
+            storage=["media"],
+            instance_key=True,
+            peers=["rekuest"],
+            scopes=[
+                Scope(key="example_read", description="See the examples you made."),
+                Scope(key="example_all", description="Do everything with examples on your behalf.", is_all_scope=True),
+            ],
+            roles=[
+                Role(key="example_admin", description="Full control of examples in this organization.", is_admin_role=True),
+                Role(key="example_editor", description="Make and change examples.", is_default_role=True),
+            ],
+        ),
         offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
         requires={"rekuest": ">=6"},
         upgrade_from="1.0.0",

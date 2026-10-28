@@ -33,11 +33,60 @@ class Said(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+#: What a description of a scope or a role reads like: a sentence, said to whoever grants it.
+SENTENCE = re.compile(r"[A-Z].{11,}[.!]")
+
+
+def _a_sentence(description: str) -> str:
+    if not SENTENCE.fullmatch(description.strip()):
+        raise ValueError(
+            f"`{description}` does not describe it: say in a full sentence, to whoever grants it, "
+            "what it lets the holder see or do (a capital first, a full stop last)"
+        )
+    return description.strip()
+
+
 class Scope(Said):
-    """A permission the service asks the coordination server to define."""
+    """What an app may do on a user's behalf here, as the coordination server asks the user to grant it.
+
+    Keys are the service's own (``mikro_write``): the coordination server keeps one of a key per
+    organization, whichever service declared it.
+    """
 
     key: str
-    description: str
+    description: str = Field(description="What it lets an app do, in a full sentence, as the user is asked to grant it.")
+    is_all_scope: bool = Field(default=False, description="It grants everything the service offers: every scope check here passes with it.")
+
+    @field_validator("description")
+    @classmethod
+    def _described(cls, description: str) -> str:
+        return _a_sentence(description)
+
+
+class Role(Said):
+    """What a member may do here, as an organization's admins hand it out."""
+
+    key: str
+    description: str = Field(description="What it lets a member do, in a full sentence, as an admin hands it out.")
+    is_admin_role: bool = Field(
+        default=False,
+        description="It lets a member do everything in the service: every role check here passes with it. The coordination server gives it to the organization's owner and admins.",
+    )
+    is_default_role: bool = Field(
+        default=False,
+        description="Every full member of an organization holds it, unless an admin took it away: what a member may do here without being handed anything.",
+    )
+
+    @field_validator("description")
+    @classmethod
+    def _described(cls, description: str) -> str:
+        return _a_sentence(description)
+
+    @model_validator(mode="after")
+    def _one_kind_of_catch(self) -> Role:
+        if self.is_admin_role and self.is_default_role:
+            raise ValueError(f"`{self.key}` cannot be both the admin role and the role every member holds")
+        return self
 
 
 class Needs(Said):
@@ -53,8 +102,14 @@ class Needs(Said):
     admin: bool = Field(default=True, description="It creates an operator account from the hub's admin.")
     peers: list[str] = Field(default_factory=list, description="Parts of the hub it uses when they are there (rekuest, ollama, livekit).")
     secrets: list[str] = Field(default_factory=list, description="Key files it needs mounted, by name (fernet).")
-    scopes: list[Scope] = Field(default_factory=list)
-    roles: list[Scope] = Field(default_factory=list)
+    scopes: list[Scope] = Field(
+        default_factory=list,
+        description="What an app may ask to do here. When there are any, exactly one is the all-scope.",
+    )
+    roles: list[Role] = Field(
+        default_factory=list,
+        description="What a member may be allowed to do here. When there are any, exactly one is the admin role, and at most one is held by every member.",
+    )
 
     @field_validator("databases")
     @classmethod
@@ -235,6 +290,34 @@ class Description(Said):
                 "and underscores. No hyphen: its databases are called after it, and Postgres would have to quote one"
             )
         return name
+
+    @model_validator(mode="after")
+    def _its_scopes_and_roles_are_its_own(self) -> Description:
+        prefix = f"{self.name}_"
+        scopes, roles = self.needs.scopes, self.needs.roles
+        keys = [scope.key for scope in scopes] + [role.key for role in roles]
+        for key in keys:
+            if not key.startswith(prefix) or not PLAIN_NAME.fullmatch(key):
+                raise ValueError(f"`{key}` is not {self.name}'s: a scope or a role is called `{prefix}<what>`, the coordination server keeps one of a key for every service")
+        if len(set(keys)) != len(keys):
+            raise ValueError(f"a scope or a role is declared twice: {', '.join(sorted({k for k in keys if keys.count(k) > 1}))}")
+        if scopes and sum(scope.is_all_scope for scope in scopes) != 1:
+            raise ValueError(f"{self.name} declares scopes, so exactly one of them is its all-scope (`is_all_scope`)")
+        if roles and sum(role.is_admin_role for role in roles) != 1:
+            raise ValueError(f"{self.name} declares roles, so exactly one of them is its admin role (`is_admin_role`)")
+        if sum(role.is_default_role for role in roles) > 1:
+            raise ValueError(f"{self.name} declares more than one role every member holds (`is_default_role`)")
+        return self
+
+    @property
+    def all_scope(self) -> str | None:
+        """The scope that grants everything here, when the service declares scopes."""
+        return next((scope.key for scope in self.needs.scopes if scope.is_all_scope), None)
+
+    @property
+    def admin_role(self) -> str | None:
+        """The role that may do everything here, when the service declares roles."""
+        return next((role.key for role in self.needs.roles if role.is_admin_role), None)
 
     @model_validator(mode="after")
     def _its_databases_names_fit(self) -> Description:
