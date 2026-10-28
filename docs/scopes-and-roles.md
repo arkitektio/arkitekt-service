@@ -54,10 +54,19 @@ strawberry_django.mutation(extensions=[AuthExtension(scopes=["mikro_write"], any
 
 Name the specific scope and role, never the catch-alls: `annotate_schema` tells authentikate which
 of the contract's scopes and roles stand for all of them. The directive publishes the requirement as
-`@auth(required_scopes: [...], any_role_of: [...])`, which is what a generated client reads: turms'
-`ScopesPlugin` gathers the scopes of the operations a client uses into `SCOPES`, the client's service
-passes them on (`@registry.service(scopes=SCOPES)`), and every app using it asks for them. Nobody
-writes an app's scopes by hand.
+`@auth(required_scopes: [...], any_role_of: [...])`, which is what a generated client reads: a
+turms `client_fields` entry on the client plugin collects the scopes of every root field the
+client's operations select onto the generated client class (`MikroApi.__scopes__`), arkitekt-spec
+reads them off the class a service returns, and every app using it asks for them. Nobody writes an
+app's scopes by hand:
+
+```yaml
+client_fields:
+  - name: __scopes__
+    kind: tuple[str, ...]
+    collector: {type: root_field_directive, directive: auth, argument: required_scopes}
+    combine: union
+```
 
 Test that nothing is left out with `scope_gaps(schema) == []` (`arkitekt_service.graphql`): it lists
 the root fields that ask for no scope, or for one the contract does not declare.
