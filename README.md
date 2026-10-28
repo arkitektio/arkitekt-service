@@ -165,6 +165,8 @@ contract = Contract(
 
 The rules a migration and a job are held to, so that an installer can update a
 running hub and put it back, are in [docs/migrations-and-jobs.md](docs/migrations-and-jobs.md).
+What a service's scopes and roles are, and how every field asks for them, is in
+[docs/scopes-and-roles.md](docs/scopes-and-roles.md).
 
 The hub's facts (`arkitekt_service.contract.facts`) and a service's description
 (`arkitekt_service.contract.description`) are versioned documents; an image refuses facts it
