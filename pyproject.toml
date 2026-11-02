@@ -72,6 +72,10 @@ line-length = 200
 exclude = [".venv", "tests", "test_project", "hook_project", "feed_project", "test_app", "arkitekt_service/*/migrations"]
 
 # The contract is the part an installer depends on: it is typed strictly, `Any` included.
+
+[tool.ruff.lint]
+extend-select = ["UP"]
+extend-ignore = ["UP037", "UP038", "UP042", "UP040", "UP046", "UP047", "UP049"]
 [tool.basedpyright]
 include = ["arkitekt_service/contract"]
 typeCheckingMode = "strict"
