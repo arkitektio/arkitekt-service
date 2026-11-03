@@ -69,7 +69,7 @@ testpaths = ["tests/contract", "tests/service", "tests/server"]
 
 [tool.ruff]
 line-length = 200
-exclude = [".venv", "tests", "test_project", "hook_project", "feed_project", "test_app", "arkitekt_service/*/migrations"]
+exclude = [".venv", "tests", "test_project", "hook_project", "feed_project", "test_app", "test_org_app", "arkitekt_service/*/migrations"]
 
 # The contract is the part an installer depends on: it is typed strictly, `Any` included.
 

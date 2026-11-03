@@ -74,6 +74,15 @@ Locally (`deployments/next`) a service runs `arkitekt-service standalone --debug
 7. **There is no separate upgrade step.** Nothing is keyed to a version: what has to happen to
    a database is said by its migrations and its setup, which is why a hub's installer, a
    developer's `standalone` container and a test database all end up the same.
+8. **A job that deletes data is a dry run unless it is told `--yes`**, and is never in
+   `setup=`. Its arguments follow `--`: `konstruktor job run <service> <job> -- --yes`. Every
+   service that installs `arkitekt_service.server` has one to declare:
+   `"prune_organizations": Job(("prune_organizations",), "...")` deletes all data of the
+   organizations named (`--only`) or of every one not named (`--keep`), and keeps the
+   organizations, their members and the change feed. It needs no knowledge of the service's
+   models (`arkitekt_service.server.prune`): a row another organization's data holds on to
+   is left and named. A service whose deletes owe something elsewhere (a feed entry its
+   writers record) does it from the `pruning` signal.
 
 ### Versions
 
