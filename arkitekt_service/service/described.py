@@ -26,11 +26,15 @@ A describer that raises keeps the value the row had (``{}`` for a new row) and l
 a save never fails because it could not be described, and whoever writes what the describer was
 missing restores it. The setup job ``restore_descriptors`` repairs every row that misses a
 declared key.
+
+The column is a cache, not something anyone changed, so it stays out of provenance: koherent's
+``ProvenanceField`` leaves out the columns a model names in ``provenance_excluded_fields``. A
+subclass that excludes more spreads this one's: ``(*Described.provenance_excluded_fields, ...)``.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 
@@ -45,6 +49,9 @@ class Described(models.Model):
         db_default=models.Value({}, output_field=models.JSONField()),
         help_text="The descriptors of this object, as its structure declares them: stored on every save so that a `requires` filter reads them in SQL",
     )
+
+    # Read by koherent's ProvenanceField: a recompute is no change in the row's history.
+    provenance_excluded_fields: ClassVar[tuple[str, ...]] = ("stored_descriptors",)
 
     class Meta:
         abstract = True
