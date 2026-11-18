@@ -39,10 +39,7 @@ SENTENCE = re.compile(r"[A-Z].{11,}[.!]")
 
 def _a_sentence(description: str) -> str:
     if not SENTENCE.fullmatch(description.strip()):
-        raise ValueError(
-            f"`{description}` does not describe it: say in a full sentence, to whoever grants it, "
-            "what it lets the holder see or do (a capital first, a full stop last)"
-        )
+        raise ValueError(f"`{description}` does not describe it: say in a full sentence, to whoever grants it, what it lets the holder see or do (a capital first, a full stop last)")
     return description.strip()
 
 
