@@ -28,6 +28,7 @@ OpenTelemetry's own ``OTEL_EXPORTER_OTLP_HEADERS``, so that no secret is part of
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Awaitable, Callable, Iterator, MutableMapping
 from contextlib import contextmanager
 from typing import Any
@@ -59,10 +60,17 @@ def recording() -> bool:
 
 
 def _service_name() -> str:
-    """What the hub calls this service: its contract's name."""
+    """What the hub calls this service: its contract's name.
+
+    An image says where its contract is (``ARKITEKT_SERVICE``). A process started without that
+    (a server run by hand before its settings were imported) is named after its settings package.
+    """
     from arkitekt_service.contract.contract import load
 
-    return load().description.name
+    try:
+        return load().description.name
+    except LookupError:
+        return os.environ.get("DJANGO_SETTINGS_MODULE", "service").split(".")[0]
 
 
 def setup(settings: TelemetrySettings | None = None, *, service_name: str | None = None) -> bool:
