@@ -368,6 +368,7 @@ telemetry:
   endpoint: http://collector:4318   # an OTLP collector (HTTP); unset, nothing is recorded
   sample_ratio: 1.0                 # the share of traces started here that are recorded
   metrics: true
+  statements: true                  # a span per database statement; false for far fewer spans
 ```
 
 Every service has the block (it is `ServiceSettings`' own; `TELEMETRY__ENDPOINT` in the

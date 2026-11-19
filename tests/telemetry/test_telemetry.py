@@ -87,6 +87,17 @@ def test_the_health_check_is_not_traced(stack: Stack, recording: str) -> None:
     assert httpx.get(f"{stack.jaeger}/api/traces/{trace_id}", timeout=5).status_code == 404
 
 
+def test_statements_can_be_left_out(stack: Stack, without_statements: str) -> None:
+    trace_id, traceparent = a_trace()
+    assert ask(without_statements, "query Counted { one }", traceparent=traceparent) == {"data": {"one": 1}}
+    # Something after it: once that is in jaeger, a statement span of the first would be too.
+    marker, marked = a_trace()
+    ask(without_statements, "query After { one }", traceparent=marked)
+    spans_of(stack, marker, at_least=2)
+
+    assert set(spans_of(stack, trace_id, at_least=2)) == {"POST /graphql", "graphql Counted"}
+
+
 def test_operations_are_measured(stack: Stack, recording: str) -> None:
     ask(recording, "query Measured { one }")
 

@@ -117,6 +117,9 @@ class TelemetrySettings(BaseModel):
     )
     sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0, description="The share of traces started here that are recorded. A request that arrives inside a trace follows that trace's decision.")
     metrics: bool = Field(default=True, description="Send metrics beside the traces.")
+    statements: bool = Field(
+        default=True, description="Record a span per database statement. Off, a trace shows requests, operations and outgoing calls only: far fewer spans where a request runs many statements."
+    )
 
 
 class ServiceSettings(BaseSettings):

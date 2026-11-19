@@ -107,7 +107,8 @@ def setup(settings: TelemetrySettings | None = None, *, service_name: str | None
     if conf.metrics:
         reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"))
         metrics.set_meter_provider(MeterProvider(metric_readers=[reader], resource=resource))
-    PsycopgInstrumentor().instrument()
+    if conf.statements:
+        PsycopgInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
     _recording = True
     logger.info("Telemetry of %s goes to %s (%d%% of traces%s)", name, base, round(conf.sample_ratio * 100), ", with metrics" if conf.metrics else "")

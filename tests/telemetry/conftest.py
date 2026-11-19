@@ -99,6 +99,12 @@ def recording(stack: Stack) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
+def without_statements(stack: Stack) -> Iterator[str]:
+    """The service recording, but no span per database statement."""
+    yield from _serve(stack, {"TELEMETRY__ENDPOINT": stack.collector, "TELEMETRY__STATEMENTS": "false", "OTEL_BSP_SCHEDULE_DELAY": "200", "OTEL_METRIC_EXPORT_INTERVAL": "500"})
+
+
+@pytest.fixture(scope="session")
 def silent(stack: Stack) -> Iterator[str]:
     """The service as it is by default: no collector named."""
     yield from _serve(stack, {})
