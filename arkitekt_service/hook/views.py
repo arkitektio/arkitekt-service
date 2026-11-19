@@ -102,12 +102,20 @@ def hook(agent: HookAgent, request: HttpRequest) -> HttpResponse:
         return JsonResponse({"error": str(error)}, status=400)
     # A thread, not an event-loop task: it outlives the request under any server (WSGI
     # runserver tears its loop down with the response), and the function may block.
-    threading.Thread(target=_run, args=(agent, config, agent_id, task, target, args), name=f"rekuest-hook-{task}", daemon=True).start()
+    # Where in a trace the task was assigned, if rekuest says: the run and its reports belong there.
+    traceparent = message.get("traceparent") if isinstance(message.get("traceparent"), str) else None
+    threading.Thread(target=_run, args=(agent, config, agent_id, task, target, args, traceparent), name=f"rekuest-hook-{task}", daemon=True).start()
     return JsonResponse({"accepted": task}, status=202)
 
 
-def _run(agent: HookAgent, config: dict[str, Any], agent_id: str, task: str, target: Action, args: dict[str, Any]) -> None:
-    """Run one Assign and report it. Started first: that is what tells rekuest it was picked up."""
+def _run(agent: HookAgent, config: dict[str, Any], agent_id: str, task: str, target: Action, args: dict[str, Any], traceparent: str | None = None) -> None:
+    """Run one Assign and report it, inside the trace it was assigned in."""
+    with telemetry.continuing(traceparent, f"run {target.interface}"):
+        _run_reporting(agent, config, agent_id, task, target, args)
+
+
+def _run_reporting(agent: HookAgent, config: dict[str, Any], agent_id: str, task: str, target: Action, args: dict[str, Any]) -> None:
+    """Started first: that is what tells rekuest it was picked up."""
     try:
         _report(agent, config, agent_id, {"type": "STARTED", "task": task})
         result = target.function(**args)

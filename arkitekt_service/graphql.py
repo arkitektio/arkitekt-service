@@ -286,7 +286,7 @@ class TelemetryExtension(SchemaExtension):
 
 
 #: The instrumentation scope a service's own spans and measurements are recorded under.
-TELEMETRY_SCOPE = "arkitekt_service"
+TELEMETRY_SCOPE = "arkitekt_service"  # arkitekt_service.telemetry.SCOPE, without importing its settings here
 
 
 def _operation_duration() -> Any:

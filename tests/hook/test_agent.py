@@ -133,6 +133,20 @@ class TestEndpoints:
         assert reports[1]["json"]["returns"] == {"acted": 3}
         assert all(r["issuer"] == "worker" for r in reports)  # signed with the instance key
 
+    def test_an_assign_runs_inside_the_trace_it_names(self, intake):
+        from arkitekt_service import telemetry
+
+        agent.action(interface="traced")(lambda: telemetry.headers())
+        url = reverse("rekuest_hook")
+        traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        body = json.dumps({"type": "ASSIGN", "task": "42", "interface": "traced", "args": {}, "traceparent": traceparent}).encode()
+        Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body))
+        assert intake.wait(3)[1]["json"]["returns"] == {"traceparent": traceparent}, "nothing records here: the trace is passed on as it came"
+
+        body = json.dumps({"type": "ASSIGN", "task": "43", "interface": "traced", "args": {}}).encode()
+        Client().post(url, data=body, content_type="application/json", headers=as_rekuest("POST", url, body))
+        assert intake.wait(6)[4]["json"]["returns"] == {}, "the second run's YIELD: a task in no trace starts none"
+
     def test_an_action_is_told_which_organization_it_runs_for(self, intake):
         agent.action(interface="tidy_org")(lambda organization: {"tidied": organization})
         url = reverse("rekuest_hook")

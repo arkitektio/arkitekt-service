@@ -28,7 +28,8 @@ OpenTelemetry's own ``OTEL_EXPORTER_OTLP_HEADERS``, so that no secret is part of
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import Awaitable, Callable, Iterator, MutableMapping
+from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import context, propagate
@@ -42,6 +43,8 @@ Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
 Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 Application = Callable[[Scope, Receive, Send], Awaitable[None]]
 
+#: The instrumentation scope a service's own spans and measurements are recorded under.
+SCOPE = "arkitekt_service"
 #: The request headers a trace travels in (W3C Trace Context).
 TRACE_HEADERS = (b"traceparent", b"tracestate")
 #: Requests nobody wants a span of: the health check, asked every few seconds.
@@ -157,6 +160,25 @@ def _following(application: Application) -> Application:
             context.detach(token)
 
     return followed
+
+
+@contextmanager
+def continuing(traceparent: str | None, name: str) -> Iterator[None]:
+    """Run the block where ``traceparent`` says in a trace, as a span of this service called ``name``.
+
+    For work that arrives with its place in a trace written in it (an ``ASSIGN``'s
+    ``traceparent``), not in a request's headers. ``None`` continues nothing: where the service
+    records, the block starts a trace of its own.
+    """
+    from opentelemetry import trace
+
+    entered = context.attach(propagate.extract({"traceparent": traceparent})) if traceparent else None
+    try:
+        with trace.get_tracer(SCOPE).start_as_current_span(name):
+            yield
+    finally:
+        if entered is not None:
+            context.detach(entered)
 
 
 def headers() -> dict[str, str]:
