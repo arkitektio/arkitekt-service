@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import httpx
 from joserfc.jwk import OKPKey
 
-from arkitekt_service import trust
+from arkitekt_service import telemetry, trust
 from arkitekt_service.contract.json_types import JSON
 from arkitekt_service.feed.api import Cursor
 
@@ -70,7 +70,7 @@ class FeedReader:
         """The entries of ``organization`` after ``after``. Raises on any answer but a page."""
         body = json.dumps({"feed": self.feed, "organization": organization, "after": {"xid": str(after.xid), "id": after.id}, "limit": limit}).encode()
         authorization = trust.sign("POST", urlparse(self.url).path, body, issuer=self.issuer, audience=self.producer, key=self.key)
-        response = self.client().post(self.url, content=body, headers={"Content-Type": "application/json", "Authorization": authorization})
+        response = self.client().post(self.url, content=body, headers={"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()})
         response.raise_for_status()
         answer = response.json()
         return RemotePage(

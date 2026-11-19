@@ -108,6 +108,17 @@ class InstanceSettings(BaseModel):
     trust: InstanceTrustSettings = Field(default_factory=InstanceTrustSettings, description="The hub's trust bundle.")
 
 
+class TelemetrySettings(BaseModel):
+    """Where the service sends its traces and metrics. Off, and costing nothing, until an endpoint is set."""
+
+    endpoint: str | None = Field(
+        default=None,
+        description="An OTLP collector's HTTP address (`http://collector:4318`): traces go to `/v1/traces` under it, metrics to `/v1/metrics`. Unset, nothing is recorded or sent.",
+    )
+    sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0, description="The share of traces started here that are recorded. A request that arrives inside a trace follows that trace's decision.")
+    metrics: bool = Field(default=True, description="Send metrics beside the traces.")
+
+
 class ServiceSettings(BaseSettings):
     """The base of a service's ``Settings``: read from the config file, with the environment over it.
 
@@ -115,6 +126,8 @@ class ServiceSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(env_nested_delimiter="__", extra="ignore")
+
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings, description="Traces and metrics, to a collector of the hub's own (see `arkitekt_service.telemetry`).")
 
     @classmethod
     def settings_customise_sources(

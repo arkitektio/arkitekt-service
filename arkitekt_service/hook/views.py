@@ -29,7 +29,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
-from arkitekt_service import trust
+from arkitekt_service import telemetry, trust
 from arkitekt_service.hook.agent import Action, HookAgent
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ def _report(agent: HookAgent, config: dict[str, Any], agent_id: str, message: di
     except trust.TrustError as error:
         logger.warning("Could not sign a report for task %s: %s", message.get("task"), error)
         return False
-    headers = {"Content-Type": "application/json", "Authorization": authorization}
+    headers = {"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()}
     try:
         response = httpx.post(url, content=body, headers=headers, timeout=_TIMEOUT)
         response.raise_for_status()

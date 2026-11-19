@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from arkitekt_service import trust
+from arkitekt_service import telemetry, trust
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def send(config: dict[str, Any], service: str, issuer: str, audience: str, messa
     except trust.TrustError as error:
         logger.warning("Could not sign a signal: %s", error)
         return False
-    headers = {"Content-Type": "application/json", "Authorization": authorization}
+    headers = {"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()}
     try:
         response = httpx.post(url, content=body, headers=headers, timeout=_TIMEOUT)
         response.raise_for_status()

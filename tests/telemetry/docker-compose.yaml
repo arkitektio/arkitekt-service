@@ -1,0 +1,47 @@
+services:
+   # What a hub's operator would run: one collector the services send to (OTLP/HTTP on 4318).
+   # It hands traces on to jaeger, and keeps the metrics for a scrape (8889).
+   collector:
+      image: otel/opentelemetry-collector:0.130.0
+      command: ["--config=env:COLLECTOR_CONFIG"]
+      environment:
+         COLLECTOR_CONFIG: |
+            receivers:
+              otlp:
+                protocols:
+                  http:
+                    endpoint: 0.0.0.0:4318
+            exporters:
+              otlp/jaeger:
+                endpoint: jaeger:4317
+                tls:
+                  insecure: true
+              prometheus:
+                endpoint: 0.0.0.0:8889
+            service:
+              pipelines:
+                traces:
+                  receivers: [otlp]
+                  exporters: [otlp/jaeger]
+                metrics:
+                  receivers: [otlp]
+                  exporters: [prometheus]
+      ports:
+        - 4318
+        - 8889
+   # Where a test reads the traces back from (the query API on 16686).
+   jaeger:
+      image: jaegertracing/all-in-one:1.76.0
+      environment:
+         COLLECTOR_OTLP_ENABLED: "true"
+      ports:
+        - 16686
+   db:
+      image: ${DATEN_IMAGE:-jhnnsrs/daten:next}
+      command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+      environment:
+         POSTGRES_MULTIPLE_DATABASES: testdb
+         POSTGRES_PASSWORD: test
+         POSTGRES_USER: test
+      ports:
+        - 5432

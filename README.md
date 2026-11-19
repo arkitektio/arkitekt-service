@@ -359,6 +359,39 @@ brings `manage.py ensureadmin` (the operator account the config names), `manage.
 validate_settings [--strict]` (the config as the release reads it, secrets masked) and a check
 that warns, when `migrate` runs, about keys the release does not read.
 
+## Telemetry, for the hub's operator
+
+Off by default, and never sent anywhere but where the hub's own config says:
+
+```yaml
+telemetry:
+  endpoint: http://collector:4318   # an OTLP collector (HTTP); unset, nothing is recorded
+  sample_ratio: 1.0                 # the share of traces started here that are recorded
+  metrics: true
+```
+
+Every service has the block (it is `ServiceSettings`' own; `TELEMETRY__ENDPOINT` in the
+environment works too). A service needs the `telemetry` extra and three lines:
+
+```python
+# asgi.py
+from arkitekt_service import telemetry
+
+telemetry.setup()  # before Django's application is built
+...
+application = telemetry.wrap(router(schema=schema, django_asgi_app=django_asgi_app))
+
+# schema.py
+schema = kante.Schema(..., extensions=[..., TelemetryExtension])  # arkitekt_service.graphql
+```
+
+With an endpoint: a span per HTTP request (not the health check, not a websocket), per GraphQL
+operation (never per field), per database statement and per outgoing httpx request, and the
+operations' durations as a metric. Without one, nothing of OpenTelemetry's SDK is imported and
+every span is a no-op; a request that arrives inside a trace still passes it on
+(`telemetry.headers()`), so the trace holds together where other services record. A collector
+that wants credentials reads them from `OTEL_EXPORTER_OTLP_HEADERS`: no secret is in the config.
+
 ## Proving an image
 
 ```python
@@ -384,6 +417,7 @@ uv sync
 uv run pytest                                          # the contract and the service
 uv run pytest tests/hook --ds=hook_project.settings    # the hook agent: a process that is no service
 uv run pytest tests/feed --ds=feed_project.settings    # the change feed: a real Postgres, via dokker
+uv run pytest tests/telemetry --ds=telemetry_project.settings  # telemetry: a real collector and jaeger, via dokker
 uv run basedpyright
 ```
 

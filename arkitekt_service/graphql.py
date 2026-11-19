@@ -26,6 +26,7 @@ gate: its guests are let in. Needs strawberry and authentikate >= 5.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Iterator
 from inspect import isawaitable
 from typing import Any
@@ -241,6 +242,81 @@ def _after_a_write(info: Any, guest: Any) -> None:
     raw = getattr(info, "_raw_info", info)
     if guest is not None and getattr(raw, "parent_type", None) is getattr(getattr(raw, "schema", None), "mutation_type", False):
         guest.forget()
+
+
+class TelemetryExtension(SchemaExtension):
+    """One span and one measurement per GraphQL operation; nothing per field.
+
+    Costs nothing where telemetry is off (:mod:`arkitekt_service.telemetry`): the span and the
+    instruments are OpenTelemetry's no-ops then. Anywhere in a schema's ``extensions``.
+    """
+
+    def on_operation(self) -> Iterator[None]:
+        from opentelemetry import context as otel_context
+        from opentelemetry import trace
+        from opentelemetry.trace import StatusCode
+
+        execution = self.execution_context
+        # Named when it ends: an operation's name is in its document, which is not parsed yet.
+        span = trace.get_tracer(TELEMETRY_SCOPE).start_span("graphql")
+        entered = otel_context.attach(trace.set_span_in_context(span))
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            otel_context.detach(entered)
+            kind = _operation_kind(execution)
+            name = _operation_name(execution)
+            span.update_name(f"graphql {name}")
+            span.set_attribute("graphql.operation.name", name)
+            result = execution.result
+            failed = bool(execution.pre_execution_errors or (result is not None and getattr(result, "errors", None)))
+            token = _request_token()
+            if kind:
+                span.set_attribute("graphql.operation.type", kind)
+            if token is not None:
+                span.set_attribute("arkitekt.client", token.client_id)
+                if token.org:
+                    span.set_attribute("arkitekt.organization", token.org)
+            if failed:
+                span.set_status(StatusCode.ERROR)
+            span.end()
+            labels = {"graphql.operation.name": name, "graphql.operation.type": kind or "unknown", "outcome": "error" if failed else "ok"}
+            _operation_duration().record(time.perf_counter() - started, labels)
+
+
+#: The instrumentation scope a service's own spans and measurements are recorded under.
+TELEMETRY_SCOPE = "arkitekt_service"
+
+
+def _operation_duration() -> Any:
+    """The histogram of how long operations take. Asked for each time: the provider is set after import."""
+    from opentelemetry import metrics
+
+    return metrics.get_meter(TELEMETRY_SCOPE).create_histogram("graphql.server.operation.duration", unit="s", description="How long a GraphQL operation took, by name, kind and outcome.")
+
+
+def _operation_name(execution: Any) -> str:
+    """What the client called the operation; ``anonymous`` for one it did not name, or that did not parse."""
+    try:
+        return str(execution.operation_name or "anonymous")
+    except Exception:  # noqa: BLE001 -- as in `_operation_kind`
+        return "anonymous"
+
+
+def _operation_kind(execution: Any) -> str | None:
+    """``query``, ``mutation`` or ``subscription``; nothing for a document that did not parse."""
+    try:
+        return str(execution.operation_type.value).lower()
+    except Exception:  # noqa: BLE001 -- strawberry raises its own errors for an unparsed or ambiguous document
+        return None
+
+
+def _request_token() -> Any:
+    """The token the operation was authenticated with, where authentikate serves the schema."""
+    from arkitekt_service.collaborations.guests import current_token
+
+    return current_token()
 
 
 class CollaborationGate(SchemaExtension):

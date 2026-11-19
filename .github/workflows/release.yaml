@@ -39,6 +39,7 @@ jobs:
           uv run pytest
           uv run pytest tests/hook --ds=hook_project.settings
           uv run pytest tests/feed --ds=feed_project.settings
+          uv run pytest tests/telemetry --ds=telemetry_project.settings
 
       - name: Typecheck the contract
         run: uv run basedpyright
