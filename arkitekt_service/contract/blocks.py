@@ -15,6 +15,9 @@ from arkitekt_service.contract.json_types import JSON
 #: The offer a hub's rekuest makes to the services that report to it: the agents' endpoint.
 AGENT = "agent"
 
+#: The offer of the collector a hub's operator chose: where OTLP over HTTP is sent.
+OTLP = "otlp"
+
 
 def django(facts: Facts) -> dict[str, JSON]:
     """``django``: the server's own settings."""
@@ -79,6 +82,29 @@ def rekuest_hook(facts: Facts) -> dict[str, JSON] | None:
     return None
 
 
+def telemetry(facts: Facts) -> dict[str, JSON] | None:
+    """``telemetry``: the collector the hub's operator chose, when the hub has one.
+
+    A hub that names none gets no block, and the service records nothing. ``metrics`` is switched
+    off for a collector that says it takes none; what else the operator sets (``sample_ratio``,
+    ``statements``) is laid over as any override is.
+    """
+    for peer in facts.offering(OTLP).values():
+        block: dict[str, JSON] = {"endpoint": peer.offers[OTLP]}
+        if peer.settings.get("metrics", "").strip().lower() == "false":
+            block["metrics"] = False
+        return block
+    return None
+
+
 def server(facts: Facts) -> dict[str, JSON]:
-    """The four blocks every service has: ``django``, ``postgres``, ``redis``, ``authentikate``."""
-    return {"django": django(facts), "postgres": postgres(facts), "redis": redis(facts), "authentikate": facts.hub.auth}
+    """The four blocks every service has: ``django``, ``postgres``, ``redis``, ``authentikate``.
+
+    And ``telemetry``, on a hub whose operator turned it on: every service sends to the same
+    collector, so it is written here once rather than by each release.
+    """
+    document: dict[str, JSON] = {"django": django(facts), "postgres": postgres(facts), "redis": redis(facts), "authentikate": facts.hub.auth}
+    collector = telemetry(facts)
+    if collector is not None:
+        document["telemetry"] = collector
+    return document

@@ -371,6 +371,11 @@ telemetry:
   statements: true                  # a span per database statement; false for far fewer spans
 ```
 
+On a hub, the operator turns it on for every service at once (`konstruktor hub features add
+telemetry`): the hub's facts then name the collector as a peer that offers `otlp`, and
+`blocks.server(facts)` writes the block from it, with `metrics: false` for a collector that
+takes none. `sample_ratio` and `statements` stay overrides of one service.
+
 Every service has the block (it is `ServiceSettings`' own; `TELEMETRY__ENDPOINT` in the
 environment works too). A service needs the `telemetry` extra and three lines:
 

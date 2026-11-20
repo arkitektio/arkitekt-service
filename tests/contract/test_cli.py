@@ -153,6 +153,29 @@ def test_the_shared_blocks_are_written_from_the_same_facts() -> None:
         blocks.instance(facts)
 
 
+def test_a_hubs_collector_becomes_every_services_telemetry_block() -> None:
+    from arkitekt_service.contract import Facts, blocks
+    from arkitekt_service.server.settings import TelemetrySettings
+
+    base = {**FACTS, "redis": {"host": "redis"}}
+    # A hub whose operator asked for nothing: no block, and nothing is recorded.
+    assert blocks.telemetry(Facts.model_validate(base)) is None
+
+    def told(collector: dict[str, object]) -> Facts:
+        return Facts.model_validate({**base, "peers": {**FACTS["peers"], "telemetry": collector}})
+
+    theirs = told({"url": "http://collector:4318", "offers": {"otlp": "http://collector:4318"}})
+    assert blocks.telemetry(theirs) == {"endpoint": "http://collector:4318"}
+    assert blocks.server(theirs)["telemetry"] == {"endpoint": "http://collector:4318"}
+
+    # One that takes traces only says so, and the service sends it no metrics.
+    jaeger = told({"url": "http://jaeger:4318", "offers": {"otlp": "http://jaeger:4318"}, "settings": {"metrics": "false"}})
+    block = blocks.telemetry(jaeger)
+    assert block == {"endpoint": "http://jaeger:4318", "metrics": False}
+    read = TelemetrySettings.model_validate(block)
+    assert read.endpoint == "http://jaeger:4318" and read.metrics is False
+
+
 def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Wait, migrate, then the jobs the service named as its setup — and a step that fails is the answer."""
     _with_jobs(monkeypatch)
