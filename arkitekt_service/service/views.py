@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 from typing import Any
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
@@ -22,6 +23,7 @@ from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
 from arkitekt_service import trust
+from arkitekt_service.contract.contract import SERVICE_VERSION
 from arkitekt_service.service.service import Service
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,23 @@ def manifest(service: Service, request: HttpRequest) -> HttpResponse:
     return JsonResponse(service.manifest())
 
 
+#: The header a health answer says the running release in, when the build named one.
+VERSION_HEADER = "Arkitekt-Service-Version"
+
+
 def _challenge_answer(request: HttpRequest, response: HttpResponse) -> HttpResponse:
     """``response``, or the signed answer when the request is a fakts challenge of a healthy service."""
+    return _versioned(_signed(request, response))
+
+
+def _versioned(response: HttpResponse) -> HttpResponse:
+    version = os.environ.get(SERVICE_VERSION)
+    if version:
+        response[VERSION_HEADER] = version
+    return response
+
+
+def _signed(request: HttpRequest, response: HttpResponse) -> HttpResponse:
     nonce = request.GET.get("nonce")
     if request.method != "GET" or nonce is None or response.status_code != 200:
         return response
@@ -65,6 +82,8 @@ def answers_challenge(view: Any) -> Any:
     ``GET ht?nonce=<nonce>`` is answered with ``{"signature": ...}`` (:func:`trust.sign_challenge`)
     — only when the health view itself answers 200, so a signature still means "up". Without a
     nonce, or without an instance key, the health view's own response passes through untouched.
+    Every answer names the running release in ``Arkitekt-Service-Version`` when the build said
+    one (``ARKITEKT_SERVICE_VERSION``): a hub reports it to the coordination server.
     Wraps sync and async views alike::
 
         dynamicpath("ht", answers_challenge(csrf_exempt(MainView.as_view())), name="health_check")

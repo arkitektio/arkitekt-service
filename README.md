@@ -99,6 +99,9 @@ What the description says:
 - `source`: where the image's code came from (repository, commit) and where it sits in the
   image, so that an installer can run the service from a checkout. The build says it:
   `ARKITEKT_SOURCE_REPOSITORY` and `ARKITEKT_SOURCE_REVISION` in the image's environment.
+  A release build also sets `ARKITEKT_SERVICE_VERSION` (`12.1.0`): the health route then
+  answers with it in `Arkitekt-Service-Version`, the hub reports it to the coordination
+  server, and an app is told when the service is outside the versions it asked for.
 - `sidecars`: what runs beside the service as an image of its own: one it does not run
   without (rekuest's takt, named from the service's image), or an `optional` one it drives
   on a hub that has the use for it (Lok's mesh control server).

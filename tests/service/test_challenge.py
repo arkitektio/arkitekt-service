@@ -60,6 +60,13 @@ def test_without_a_nonce_the_health_answer_is_untouched():
     assert healthy.csrf_exempt is True
 
 
+def test_a_release_names_itself_in_every_health_answer(monkeypatch):
+    assert "Arkitekt-Service-Version" not in healthy(RequestFactory().get("/ht"))
+    monkeypatch.setenv("ARKITEKT_SERVICE_VERSION", "12.1.0")
+    assert healthy(RequestFactory().get("/ht"))["Arkitekt-Service-Version"] == "12.1.0"
+    assert healthy(RequestFactory().get("/ht", {"nonce": "n-1"}))["Arkitekt-Service-Version"] == "12.1.0"
+
+
 def test_an_unhealthy_service_does_not_sign():
     response = unhealthy(RequestFactory().get("/ht", {"nonce": "n-1"}))
     assert response.status_code == 500 and response.content == b"down"

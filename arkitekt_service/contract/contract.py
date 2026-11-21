@@ -20,6 +20,9 @@ ENVIRONMENT = "ARKITEKT_SERVICE"
 #: Set from build arguments, so that no contract carries a commit by hand.
 SOURCE_REPOSITORY = "ARKITEKT_SOURCE_REPOSITORY"
 SOURCE_REVISION = "ARKITEKT_SOURCE_REVISION"
+#: The release the image is (``12.1.0``), from a build argument like the source. Unset for a
+#: build that is no release: the service then says no version.
+SERVICE_VERSION = "ARKITEKT_SERVICE_VERSION"
 #: The image label the description is stamped into at build (``arkitekt-service label``), so that
 #: an installer reads it from the registry without pulling the image or running it.
 LABEL = "live.arkitekt.service"
