@@ -89,7 +89,9 @@ class Collaboration:
     description: str | None
     created_at: strawberry.auto
 
-    @strawberry_django.field(description="What is in the collaboration, oldest first; what is part of these is in it too. `brought` keeps what was put in by hand (false) or only what came along with it (true)")
+    @strawberry_django.field(
+        description="What is in the collaboration, oldest first; what is part of these is in it too. `brought` keeps what was put in by hand (false) or only what came along with it (true)"
+    )
     def items(self, brought: bool | None = None, pagination: OffsetPaginationInput | None = None) -> list[CollaborationItem]:
         items = models.CollaborationItem.objects.filter(_brought_q(brought), collaboration=self).select_related("content_type").order_by("added_at", "pk")
         return list(_page(items, pagination))  # type: ignore[return-value]
