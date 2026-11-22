@@ -9,6 +9,7 @@
     @kante.type
     class Query:
         collaborations: list[collaboration_types.Collaboration] = kante.django_field(resolver=api.collaborations, extensions=[AuthExtension()])
+        collaborations_stats: collaboration_types.CollaborationStats = kante.django_field(resolver=api.collaborations_stats, extensions=[AuthExtension(allow_scoped=True)])
 
     @kante.type
     class Mutation:
@@ -29,9 +30,34 @@ from typing import Any
 
 import strawberry
 import strawberry_django
+from django.db.models import Count, Q, QuerySet
+from strawberry_django.pagination import OffsetPaginationInput
 
 from arkitekt_service.collaborations import items as collaboration_items
 from arkitekt_service.collaborations import models
+from arkitekt_service.collaborations.guests import object_scope
+
+#: The annotations :func:`resolvers`' list puts on each collaboration, so a list of cards counts
+#: what is in them in the one query that lists them.
+_ITEMS = "_arkitekt_item_count"
+_PUT = "_arkitekt_put_count"
+
+
+def _page(queryset: QuerySet[Any], pagination: OffsetPaginationInput | None) -> QuerySet[Any]:
+    """One page of ``queryset``: ``offset`` rows skipped, at most ``limit`` kept (none or negative: all)."""
+    if pagination is None:
+        return queryset
+    offset = pagination.offset or 0
+    if pagination.limit is None or pagination.limit < 0:
+        return queryset[offset:]
+    return queryset[offset : offset + pagination.limit]
+
+
+def _brought_q(brought: bool | None) -> Q:
+    """The items put in by hand (``False``), brought along by another (``True``), or all (``None``)."""
+    if brought is None:
+        return Q()
+    return Q(because_of__isnull=not brought)
 
 
 def _identifier(model: Any) -> str | None:
@@ -63,9 +89,24 @@ class Collaboration:
     description: str | None
     created_at: strawberry.auto
 
-    @strawberry_django.field(description="What is in the collaboration; what is part of these is in it too")
-    def items(self) -> list[CollaborationItem]:
-        return list(models.CollaborationItem.objects.filter(collaboration=self).select_related("content_type").order_by("added_at", "pk"))  # type: ignore[return-value]
+    @strawberry_django.field(description="What is in the collaboration, oldest first; what is part of these is in it too. `brought` keeps what was put in by hand (false) or only what came along with it (true)")
+    def items(self, brought: bool | None = None, pagination: OffsetPaginationInput | None = None) -> list[CollaborationItem]:
+        items = models.CollaborationItem.objects.filter(_brought_q(brought), collaboration=self).select_related("content_type").order_by("added_at", "pk")
+        return list(_page(items, pagination))  # type: ignore[return-value]
+
+    @strawberry_django.field(description="How many objects are in the collaboration: all of them, or (`brought`) only those put in by hand (false) or only those that came along with one (true)")
+    def item_count(self, brought: bool | None = None) -> int:
+        counted: dict[str, int] = self.__dict__  # type: ignore[assignment]
+        if _ITEMS in counted and _PUT in counted:
+            total, put = counted[_ITEMS], counted[_PUT]
+            return total if brought is None else (total - put if brought else put)
+        return models.CollaborationItem.objects.filter(_brought_q(brought), collaboration=self).count()
+
+
+@strawberry.type(description="How many collaborations the organization has (a guest: theirs), and how much is in them")
+class CollaborationStats:
+    count: int = strawberry.field(description="How many collaborations")
+    item_count: int = strawberry.field(description="How many objects are in them altogether, brought along ones included")
 
 
 @strawberry.input(description="An object to put in, or take out of, a collaboration")
@@ -90,6 +131,7 @@ class Resolvers:
 
     collaborations: Callable[..., list[Collaboration]]
     collaboration: Callable[..., Collaboration]
+    collaborations_stats: Callable[..., CollaborationStats]
     create_collaboration: Callable[..., Collaboration]
     add_to_collaboration: Callable[..., Collaboration]
     remove_from_collaboration: Callable[..., Collaboration]
@@ -113,9 +155,20 @@ def resolvers(fetch: Fetch) -> Resolvers:
             raise ValueError(f"No structure {identifier!r} is hosted here")
         return fetch(structure.model, object_id, info)
 
-    def collaborations(info: strawberry.Info) -> list[Collaboration]:
-        """The organization's collaborations (a guest: theirs)."""
-        return list(models.Collaboration.objects.filter(organization=_organization(info)).order_by("pk"))  # type: ignore[return-value]
+    def _visible(info: strawberry.Info) -> QuerySet[models.Collaboration]:
+        # Narrowed for a guest *before* any page is cut: the gate drops what a guest may not see
+        # only after the resolver ran, which would leave a page short.
+        return object_scope(models.Collaboration.objects.filter(organization=_organization(info)), info=info)
+
+    def collaborations(info: strawberry.Info, pagination: OffsetPaginationInput | None = None) -> list[Collaboration]:
+        """The organization's collaborations (a guest: theirs), oldest first, each counting what is in it."""
+        listed = _visible(info).annotate(**{_ITEMS: Count("items"), _PUT: Count("items", filter=Q(items__because_of__isnull=True))}).order_by("pk")
+        return list(_page(listed, pagination))  # type: ignore[return-value]
+
+    def collaborations_stats(info: strawberry.Info) -> CollaborationStats:
+        """How many collaborations there are, and objects in them, over what ``collaborations`` lists."""
+        visible = _visible(info)
+        return CollaborationStats(count=visible.count(), item_count=models.CollaborationItem.objects.filter(collaboration__in=visible.values("pk")).count())
 
     def collaboration(info: strawberry.Info, id: strawberry.ID) -> Collaboration:
         """One collaboration of the organization."""
@@ -142,7 +195,7 @@ def resolvers(fetch: Fetch) -> Resolvers:
         _collaboration(info, id).delete()
         return id
 
-    return Resolvers(collaborations, collaboration, create_collaboration, add_to_collaboration, remove_from_collaboration, delete_collaboration)
+    return Resolvers(collaborations, collaboration, collaborations_stats, create_collaboration, add_to_collaboration, remove_from_collaboration, delete_collaboration)
 
 
-__all__ = ["Collaboration", "CollaborationItem", "CollaborationObjectInput", "CreateCollaborationInput", "Resolvers", "resolvers"]
+__all__ = ["Collaboration", "CollaborationItem", "CollaborationObjectInput", "CollaborationStats", "CreateCollaborationInput", "Resolvers", "resolvers"]
