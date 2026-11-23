@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from django.core.management import CommandError, call_command
+from django.db.models import QuerySet
 
 pytest.importorskip("authentikate")
 
@@ -222,7 +225,10 @@ def test_receivers_see_the_rows_before_they_go() -> None:
     seen: list[int] = []
 
     def record(
-        sender: type, rows, organization: Organization, **kwargs: object
+        sender: type,
+        rows: QuerySet[Any],
+        organization: Organization,
+        **kwargs: object,
     ) -> None:
         assert organization == a
         seen.extend(rows.values_list("pk", flat=True))

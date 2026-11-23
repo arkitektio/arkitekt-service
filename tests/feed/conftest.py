@@ -2,17 +2,19 @@
 
 import os
 import time
+from collections.abc import Iterator
 
 import psycopg
 import pytest
 from django.conf import settings as django_settings
 from dokker import PortNotFoundError, testing
+from pytest_django.live_server_helper import LiveServer
 
 from arkitekt_service.feed.reader import FeedReader
 
 
 @pytest.fixture(scope="session")
-def backend_stack():
+def backend_stack() -> Iterator[int]:
     with testing(
         os.path.join(os.path.dirname(__file__), "docker-compose.yaml")
     ) as deployment:
@@ -41,12 +43,12 @@ def backend_stack():
 
 
 @pytest.fixture(scope="session")
-def django_db_modify_db_settings(backend_stack):
+def django_db_modify_db_settings(backend_stack: int) -> None:
     django_settings.DATABASES["default"]["PORT"] = str(backend_stack)
 
 
 @pytest.fixture
-def reader(live_server):
+def reader(live_server: LiveServer) -> FeedReader:
     """kraph reading mikro's metric feed, over HTTP, signed with kraph's key."""
     return FeedReader(
         url=f"{live_server.url}/_feed",

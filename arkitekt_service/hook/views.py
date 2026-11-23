@@ -19,7 +19,8 @@ import logging
 import threading
 import traceback
 import uuid
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, TypeVar
 from urllib.parse import urlparse
 
 import httpx
@@ -31,6 +32,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from arkitekt_service import telemetry, trust
 from arkitekt_service.hook.agent import Action, HookAgent
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +205,7 @@ def _run_reporting(
         close_old_connections()
 
 
-async def _await(awaitable):
+async def _await(awaitable: Awaitable[_T]) -> _T:
     return await awaitable
 
 

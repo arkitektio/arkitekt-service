@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from inspect import isawaitable
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import strawberry
 from django.db.models import Model, QuerySet
@@ -37,7 +37,10 @@ from graphql import (
     FieldNode,
     FragmentDefinitionNode,
     FragmentSpreadNode,
+    GraphQLField,
+    GraphQLNamedType,
     GraphQLObjectType,
+    GraphQLResolveInfo,
     GraphQLSchema,
     InlineFragmentNode,
     OperationDefinitionNode,
@@ -48,6 +51,17 @@ from graphql import (
 )
 from strawberry.extensions import SchemaExtension
 from strawberry.schema_directive import Location
+
+if TYPE_CHECKING:
+    from authentikate.base_models import JWTToken
+    from graphql import DocumentNode, GraphQLAbstractType
+    from opentelemetry.metrics import Histogram
+    from strawberry.types import ExecutionContext
+
+    from arkitekt_service.collaborations.guests import CollaborationToken, Guest
+    from arkitekt_service.service.service import Service
+
+_SchemaT = TypeVar("_SchemaT", bound=strawberry.Schema)
 
 DEFINITION = "strawberry-definition"
 
@@ -62,7 +76,7 @@ class Identified:
     by: str
 
 
-def _model_of(graphql_type: Any) -> Any:
+def _model_of(graphql_type: object) -> type[Model] | None:
     """The Django model a strawberry-django type is made from, if any."""
     definition = (getattr(graphql_type, "extensions", None) or {}).get(DEFINITION)
     django = getattr(
@@ -85,7 +99,7 @@ def _declare_catch_alls() -> None:
     declare_catch_alls(scope=said.all_scope, role=said.admin_role)
 
 
-def scope_gaps(schema: Any) -> list[str]:
+def scope_gaps(schema: strawberry.Schema) -> list[str]:
     """The root fields of ``schema`` that ask for no scope, or for one the contract does not declare.
 
     Every query, mutation and subscription says which scope an app needs for it
@@ -124,7 +138,7 @@ def scope_gaps(schema: Any) -> list[str]:
     return gaps
 
 
-def annotate_schema(schema: Any, service: Any) -> Any:
+def annotate_schema(schema: _SchemaT, service: Service) -> _SchemaT:
     """Say on ``schema`` which structure each type is (``@identified``); behind the gate, say
     ``service`` lets guests in; tell authentikate the contract's catch-all scope and role.
     Returns the schema."""
@@ -164,7 +178,7 @@ def annotate_schema(schema: Any, service: Any) -> Any:
 # --- the gate ----------------------------------------------------------------------------------
 
 
-def _relates(schema: GraphQLSchema, graphql_type: Any) -> bool:
+def _relates(schema: GraphQLSchema, graphql_type: GraphQLNamedType) -> bool:
     """Whether a field returning ``graphql_type`` hands out objects: a model's type, or an interface or union of one."""
     if is_leaf_type(graphql_type):
         return False
@@ -172,11 +186,14 @@ def _relates(schema: GraphQLSchema, graphql_type: Any) -> bool:
         return _model_of(graphql_type) is not None
     return any(
         _model_of(possible) is not None
-        for possible in schema.get_possible_types(graphql_type)
+        # Not a leaf, not an object type: an interface or a union.
+        for possible in schema.get_possible_types(
+            cast("GraphQLAbstractType", graphql_type)
+        )
     )
 
 
-def _opted_in(field: Any) -> bool:
+def _opted_in(field: GraphQLField) -> bool:
     definition = (field.extensions or {}).get(DEFINITION)
     return any(
         getattr(e, "allow_scoped", False)
@@ -206,7 +223,7 @@ def _root_fields(
 
 
 def closed_roots(
-    schema: GraphQLSchema, document: Any, operation_name: str | None
+    schema: GraphQLSchema, document: DocumentNode, operation_name: str | None
 ) -> list[str]:
     """The root fields of a query a guest may not enter at: those handing out no objects, not opted in."""
     operation = next(
@@ -256,12 +273,12 @@ def _in_loop() -> bool:
 IDENTITIES = frozenset({"user", "client", "organization"})
 
 
-def _identity(item: Any) -> bool:
+def _identity(item: Model) -> bool:
     meta = type(item)._meta
     return meta.app_label == "authentikate" and meta.model_name in IDENTITIES
 
 
-def _shown(item: Model, guest: Any, parent: Any) -> bool:
+def _shown(item: Model, guest: Guest, parent: object) -> bool:
     """Whether the guest is handed ``item``: in their collaborations, or who made, runs or owns what is
     (a room's creator, an agent's user). An identity is never handed out at a root field, nor through
     another identity: a creator's active organization is theirs, not the collaboration's."""
@@ -270,7 +287,7 @@ def _shown(item: Model, guest: Any, parent: Any) -> bool:
     return isinstance(parent, Model) and not _identity(parent) and guest.sees(parent)
 
 
-def _held(value: Any, guest: Any, parent: Any = None) -> Any:
+def _held(value: object, guest: Guest, parent: object = None) -> object:
     """``value`` with what is not in the guest's collaborations taken out. Reads the database: call it sync."""
     if isinstance(value, Model):
         return value if _shown(value, guest, parent) else None
@@ -285,7 +302,7 @@ def _held(value: Any, guest: Any, parent: Any = None) -> Any:
     return value
 
 
-def _hands_out_objects(value: Any) -> bool:
+def _hands_out_objects(value: object) -> bool:
     if isinstance(value, (Model, QuerySet)):
         return True
     return isinstance(value, (list, tuple)) and any(
@@ -293,7 +310,7 @@ def _hands_out_objects(value: Any) -> bool:
     )
 
 
-def _known(value: Any, guest: Any, parent: Any = None) -> bool:
+def _known(value: object, guest: Guest, parent: object = None) -> bool:
     """Whether holding ``value`` reads nothing: every model in it (or, for an identity, what it is attached to) was read for the guest already."""
     if isinstance(value, QuerySet):
         return False
@@ -312,7 +329,7 @@ def _known(value: Any, guest: Any, parent: Any = None) -> bool:
     return all(guest.knows(type(item)) for item in items if not _identity(item))
 
 
-def _after_a_write(info: Any, guest: Any) -> None:
+def _after_a_write(info: object, guest: Guest | None) -> None:
     """What a mutation wrote may be part of a collaboration now (an annotation drawn in it): read again."""
     raw = getattr(info, "_raw_info", info)
     if guest is not None and getattr(raw, "parent_type", None) is getattr(
@@ -373,7 +390,7 @@ class TelemetryExtension(SchemaExtension):
 TELEMETRY_SCOPE = "arkitekt_service"  # arkitekt_service.telemetry.SCOPE, without importing its settings here
 
 
-def _operation_duration() -> Any:
+def _operation_duration() -> Histogram:
     """The histogram of how long operations take. Asked for each time: the provider is set after import."""
     from opentelemetry import metrics
 
@@ -384,7 +401,7 @@ def _operation_duration() -> Any:
     )
 
 
-def _operation_name(execution: Any) -> str:
+def _operation_name(execution: ExecutionContext) -> str:
     """What the client called the operation; ``anonymous`` for one it did not name, or that did not parse."""
     try:
         return str(execution.operation_name or "anonymous")
@@ -392,7 +409,7 @@ def _operation_name(execution: Any) -> str:
         return "anonymous"
 
 
-def _operation_kind(execution: Any) -> str | None:
+def _operation_kind(execution: ExecutionContext) -> str | None:
     """``query``, ``mutation`` or ``subscription``; nothing for a document that did not parse."""
     try:
         return str(execution.operation_type.value).lower()
@@ -400,7 +417,7 @@ def _operation_kind(execution: Any) -> str | None:
         return None
 
 
-def _request_token() -> Any:
+def _request_token() -> JWTToken | None:
     """The token the operation was authenticated with, where authentikate serves the schema."""
     from arkitekt_service.collaborations.guests import current_token
 
@@ -453,8 +470,13 @@ class CollaborationGate(SchemaExtension):
         yield
 
     def resolve(
-        self, _next: Any, root: Any, info: Any, *args: Any, **kwargs: Any
-    ) -> Any:
+        self,
+        _next: Callable[..., object],
+        root: object,
+        info: GraphQLResolveInfo,
+        *args: Any,
+        **kwargs: Any,
+    ) -> object:
         result = _next(root, info, *args, **kwargs)
         from arkitekt_service.collaborations.guests import current_token, guest_of
 
@@ -465,13 +487,20 @@ class CollaborationGate(SchemaExtension):
             return self._aheld(result, root, info, token)
         if not _hands_out_objects(result):
             return result
-        guest = guest_of(info, token)
+        # The token is a guest's, so there is one.
+        guest = cast("Guest", guest_of(info, token))
         _after_a_write(info, guest)
         if _in_loop() and not _known(result, guest, root):
             return self._aheld(result, root, info, token)
         return _held(result, guest, root)
 
-    async def _aheld(self, result: Any, root: Any, info: Any, token: Any) -> Any:
+    async def _aheld(
+        self,
+        result: object,
+        root: object,
+        info: GraphQLResolveInfo,
+        token: CollaborationToken,
+    ) -> object:
         from asgiref.sync import sync_to_async
 
         from arkitekt_service.collaborations.guests import guest_of
@@ -479,7 +508,8 @@ class CollaborationGate(SchemaExtension):
         value = await result if isawaitable(result) else result
         if not _hands_out_objects(value):
             return value
-        guest = guest_of(info, token)
+        # The token is a guest's, so there is one.
+        guest = cast("Guest", guest_of(info, token))
         _after_a_write(info, guest)
         if _known(value, guest, root):
             return _held(value, guest, root)

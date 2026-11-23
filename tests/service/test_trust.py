@@ -4,20 +4,29 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 import pytest
 from joserfc.jwk import OKPKey
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 from arkitekt_service import trust
 
 ME = "testsvc"
 
 
-def _verify(header, *, method="POST", path="/p", body=b"x", audience="rekuest"):
+def _verify(
+    header: str | None,
+    *,
+    method: str = "POST",
+    path: str = "/p",
+    body: bytes = b"x",
+    audience: str = "rekuest",
+) -> trust.Verified:
     return trust.verify(method, path, body, header, audience=audience)
 
 
-def test_a_signed_request_verifies_as_its_sender():
+def test_a_signed_request_verifies_as_its_sender() -> None:
     verified = _verify(trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest"))
     assert verified.issuer == ME and verified.jti
 
@@ -31,19 +40,21 @@ def test_a_signed_request_verifies_as_its_sender():
         ({"audience": "mikro"}, "not 'mikro'"),
     ],
 )
-def test_a_token_only_fits_the_request_it_was_signed_for(change, message):
+def test_a_token_only_fits_the_request_it_was_signed_for(
+    change: dict[str, Any], message: str
+) -> None:
     header = trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest")
     with pytest.raises(trust.TrustError, match=message):
         _verify(header, **change)
 
 
-def test_a_key_can_only_speak_for_its_own_service():
+def test_a_key_can_only_speak_for_its_own_service() -> None:
     header = trust.sign("POST", "/p", b"x", issuer="rekuest", audience="rekuest")
     with pytest.raises(trust.TrustError, match="belongs to"):
         _verify(header)
 
 
-def test_an_expired_token_is_refused(monkeypatch):
+def test_an_expired_token_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     header = trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest")
     later = time.time() + trust.LIFETIME_SECONDS + 120
     monkeypatch.setattr(trust.time, "time", lambda: later)
@@ -51,14 +62,14 @@ def test_an_expired_token_is_refused(monkeypatch):
         _verify(header)
 
 
-def test_a_missing_or_foreign_header_is_refused():
+def test_a_missing_or_foreign_header_is_refused() -> None:
     with pytest.raises(trust.TrustError):
         _verify(None)
     with pytest.raises(trust.TrustError):
         _verify("Bearer abc")
 
 
-def test_the_raw_public_key_is_the_32_byte_challenge_key():
+def test_the_raw_public_key_is_the_32_byte_challenge_key() -> None:
     import base64
 
     key = OKPKey.generate_key("Ed25519")
@@ -68,13 +79,13 @@ def test_the_raw_public_key_is_the_32_byte_challenge_key():
 class _Bundle:
     """A coord stand-in serving a JWKS that can change (rotation)."""
 
-    def __init__(self, keys):
+    def __init__(self, keys: list[dict[str, object]]) -> None:
         self.jwks = {"keys": keys}
         self.hits = 0
         bundle = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self) -> None:  # noqa: N802
                 bundle.hits += 1
                 body = json.dumps(bundle.jwks).encode()
                 self.send_response(200)
@@ -83,7 +94,7 @@ class _Bundle:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def log_message(self, *args):
+            def log_message(self, *args: object) -> None:
                 pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -93,7 +104,9 @@ class _Bundle:
         )
 
 
-def test_a_fetched_bundle_is_cached_and_refetched_for_a_new_key(settings, monkeypatch):
+def test_a_fetched_bundle_is_cached_and_refetched_for_a_new_key(
+    settings: SettingsWrapper, monkeypatch: pytest.MonkeyPatch
+) -> None:
     old, new = OKPKey.generate_key("Ed25519"), OKPKey.generate_key("Ed25519")
     bundle = _Bundle([{**trust.public_jwk(old), "service": "mikro"}])
     settings.INSTANCE = {
@@ -124,13 +137,15 @@ HUB = "0192f3c4-7a2b-7c1d-9e8f-1a2b3c4d5e6f"
 OTHER_HUB = "0192f3c4-0000-7000-8000-000000000000"
 
 
-def test_a_token_carries_the_hub_it_was_signed_in(settings):
+def test_a_token_carries_the_hub_it_was_signed_in(settings: SettingsWrapper) -> None:
     settings.AUTHENTIKATE = {"hub": HUB}
     verified = _verify(trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest"))
     assert verified.hub == HUB
 
 
-def test_a_service_of_another_hub_with_the_same_name_is_refused(settings):
+def test_a_service_of_another_hub_with_the_same_name_is_refused(
+    settings: SettingsWrapper,
+) -> None:
     """Names are unique only within a hub: the hub is what tells two `mikro`s apart."""
     settings.AUTHENTIKATE = {"hub": HUB}
     elsewhere = trust.sign(
@@ -140,7 +155,9 @@ def test_a_service_of_another_hub_with_the_same_name_is_refused(settings):
         _verify(elsewhere)
 
 
-def test_a_token_naming_no_hub_is_refused_by_a_service_that_has_one(settings):
+def test_a_token_naming_no_hub_is_refused_by_a_service_that_has_one(
+    settings: SettingsWrapper,
+) -> None:
     settings.AUTHENTIKATE = {}
     unhubbed = trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest")
     settings.AUTHENTIKATE = {"hub": HUB}

@@ -22,12 +22,15 @@ import json
 import logging
 import queue
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
 
 from arkitekt_service import telemetry, trust
+
+if TYPE_CHECKING:
+    from joserfc.jwk import OKPKey
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ def enqueue(
     issuer: str,
     audience: str,
     message: dict[str, Any],
-    key: Any = None,
+    key: OKPKey | None = None,
 ) -> None:
     """Hand a signal to this process's sender thread: one at a time, in commit order.
 
@@ -96,7 +99,7 @@ def send(
     issuer: str,
     audience: str,
     message: dict[str, Any],
-    key: Any = None,
+    key: OKPKey | None = None,
 ) -> bool:
     """POST one signal to rekuest's signal intake, signed with this instance's key. Never raises."""
     body = json.dumps(message).encode()

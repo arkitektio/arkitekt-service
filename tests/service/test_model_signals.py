@@ -6,6 +6,7 @@ from django.db import transaction
 
 from arkitekt_service.service import Service
 from test_app.models import Part, Thing
+from tests.service.conftest import Intake
 
 things = Service("things", key=settings.THINGS_KEY)
 # Hosting first ...
@@ -26,13 +27,15 @@ thing_signal = things.model_signal(
 )
 
 
-def _bodies(intake, count, timeout=5):
+def _bodies(intake: Intake, count: int, timeout: float = 5) -> list[dict[str, object]]:
     return [r["json"] for r in intake.wait(count, timeout=timeout)]
 
 
 @pytest.mark.django_db(transaction=True)
 class TestModelSignals:
-    def test_create_update_delete_are_signalled_after_commit(self, intake):
+    def test_create_update_delete_are_signalled_after_commit(
+        self, intake: Intake
+    ) -> None:
         with transaction.atomic():
             thing = Thing.objects.create(name="a")
             assert intake.received == []  # nothing before the commit
@@ -54,7 +57,9 @@ class TestModelSignals:
             for r in intake.received
         )
 
-    def test_the_signal_carries_what_the_structure_describes(self, intake):
+    def test_the_signal_carries_what_the_structure_describes(
+        self, intake: Intake
+    ) -> None:
         with transaction.atomic():
             made = Thing.objects.create(name="with parts")
             Part.objects.create(thing=made)
@@ -65,7 +70,9 @@ class TestModelSignals:
         (body,) = _bodies(intake, 1)
         assert body["descriptors"] == things.describe(made) == {"@things/n_parts": 2}
 
-    def test_a_restore_that_changes_the_descriptors_is_an_update(self, intake):
+    def test_a_restore_that_changes_the_descriptors_is_an_update(
+        self, intake: Intake
+    ) -> None:
         made = Thing.objects.create(name="restored later")
         Part.objects.create(thing=made)
         assert things.restore(made) == 1
@@ -77,18 +84,18 @@ class TestModelSignals:
         ]
         assert _bodies(intake, 3, timeout=0.5) == bodies
 
-    def test_a_rolled_back_save_sends_nothing(self, intake):
+    def test_a_rolled_back_save_sends_nothing(self, intake: Intake) -> None:
         with pytest.raises(RuntimeError):
             with transaction.atomic():
                 Thing.objects.create(name="never")
                 raise RuntimeError
         assert _bodies(intake, 1, timeout=0.5) == []
 
-    def test_when_can_veto(self, intake):
+    def test_when_can_veto(self, intake: Intake) -> None:
         Thing.objects.create(name="hidden", secret=True)
         assert _bodies(intake, 1, timeout=0.5) == []
 
-    def test_a_failing_description_never_breaks_the_save(self, intake):
+    def test_a_failing_description_never_breaks_the_save(self, intake: Intake) -> None:
         broken = Service("broken", key=settings.BROKEN_KEY)
         broken.model_signal(
             broken.structure(Part, "@things/part"), organization=lambda part: 1 / 0
@@ -98,7 +105,7 @@ class TestModelSignals:
         )  # the save succeeds
         assert _bodies(intake, 1, timeout=0.5) == []
 
-    def test_fixture_loading_is_not_an_event(self, intake):
+    def test_fixture_loading_is_not_an_event(self, intake: Intake) -> None:
         from django.db.models.signals import post_save
 
         thing = Thing(name="loaded", pk=4242)
@@ -108,7 +115,7 @@ class TestModelSignals:
 
 
 class TestDeclaration:
-    def test_the_signal_declares_the_structures_keys_and_its_own(self):
+    def test_the_signal_declares_the_structures_keys_and_its_own(self) -> None:
         (declared,) = things.manifest()["signals"]
         assert declared == {
             "identifier": "@things/thing",
@@ -118,7 +125,7 @@ class TestDeclaration:
         }
         assert thing_signal.identifier == thing.identifier
 
-    def test_the_model_may_stand_for_its_structure(self):
+    def test_the_model_may_stand_for_its_structure(self) -> None:
         local = Service("local")
         hosted = local.structure(Part, "@local/part")
         assert (
@@ -128,7 +135,7 @@ class TestDeclaration:
             == hosted.identifier
         )
 
-    def test_only_a_hosted_structure_can_be_signalled(self):
+    def test_only_a_hosted_structure_can_be_signalled(self) -> None:
         local = Service("local")
         with pytest.raises(ValueError, match="not a structure this service hosts"):
             local.model_signal(Part, organization=lambda part: "org")
@@ -138,7 +145,7 @@ class TestDeclaration:
             )  # another service's
 
 
-def test_organization_of_follows_a_path_to_the_identifier():
+def test_organization_of_follows_a_path_to_the_identifier() -> None:
     from types import SimpleNamespace
 
     from arkitekt_service.service import organization_of

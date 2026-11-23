@@ -3,10 +3,12 @@
 import json
 import threading
 import time
+from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from django.conf import settings as django_settings
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 from arkitekt_service import trust
 from hook_project.urls import agent
@@ -22,7 +24,7 @@ class Intake:
         intake = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):  # noqa: N802
+            def do_POST(self) -> None:  # noqa: N802
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 try:
                     verified = trust.verify(
@@ -47,7 +49,7 @@ class Intake:
                 self.send_response(202)
                 self.end_headers()
 
-            def log_message(self, *args):
+            def log_message(self, *args: object) -> None:
                 pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -62,7 +64,7 @@ class Intake:
 
 
 @pytest.fixture
-def intake(settings):
+def intake(settings: SettingsWrapper) -> Iterator[Intake]:
     server = Intake()
     settings.REKUEST_HOOK = {**settings.REKUEST_HOOK, "REKUEST_URL": server.url}
     yield server
@@ -92,6 +94,6 @@ def as_rekuest(
 
 
 @pytest.fixture(autouse=True)
-def clean_agent():
+def clean_agent() -> Iterator[None]:
     yield
     agent._actions.clear()

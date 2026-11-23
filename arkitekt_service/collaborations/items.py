@@ -11,28 +11,30 @@ handed out without what it cannot be read without.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
+from django.db.models import Model
 
 from arkitekt_service.collaborations.guests import wholes
 from arkitekt_service.collaborations.models import Collaboration, CollaborationItem
 
 
-def content_type_of(obj: Any) -> ContentType:
+def content_type_of(obj: Model) -> ContentType:
     return ContentType.objects.get_for_model(type(obj))
 
 
-def _key(obj: Any) -> tuple[type, str]:
+def _key(obj: Model) -> tuple[type, str]:
     return (type(obj), str(obj.pk))
 
 
 def _bring(
     collaboration: Collaboration,
     item: CollaborationItem,
-    obj: Any,
-    by: Any,
+    obj: Model,
+    by: object,
     seen: set[tuple[type, str]],
 ) -> None:
     """Put in what ``obj`` needs to be seen, and what that needs in turn, brought by ``item``."""
@@ -56,21 +58,21 @@ def _bring(
 class SharedWithItsWhole(ValueError):
     """``obj`` is part of another object, which is not in the collaboration: that one is to be put in."""
 
-    def __init__(self, obj: Any, whole: Any) -> None:
+    def __init__(self, obj: Model, whole: Model) -> None:
         self.obj, self.whole = obj, whole
         super().__init__(
             f"{_name(obj)} {obj.pk} is part of {_name(whole)} {whole.pk}, and is shared with it: put that in the collaboration"
         )
 
 
-def _name(obj: Any) -> str:
+def _name(obj: Model) -> str:
     from arkitekt_service.service.service import Service
 
     structure = Service.hosting(obj)
     return structure.identifier if structure is not None else type(obj).__name__
 
 
-def whole_of(obj: Any) -> Any:
+def whole_of(obj: Model) -> Model | None:
     """The object ``obj`` is shared with, if it is part of one: what its structure names (``whole``),
     else the nearest hosted object a required, cascading key leads to. None for a whole."""
     from arkitekt_service.service.service import Service
@@ -88,7 +90,7 @@ def whole_of(obj: Any) -> Any:
     return None
 
 
-def holds(collaboration: Collaboration, obj: Any) -> bool:
+def holds(collaboration: Collaboration, obj: Model) -> bool:
     """Whether ``obj`` is in ``collaboration``: put in, or part of something that is."""
     if CollaborationItem.objects.filter(
         collaboration=collaboration,
@@ -102,9 +104,9 @@ def holds(collaboration: Collaboration, obj: Any) -> bool:
 
 def add(
     collaboration: Collaboration,
-    obj: Any,
+    obj: Model,
     *,
-    by: Any = None,
+    by: object = None,
     because_of: CollaborationItem | None = None,
 ) -> CollaborationItem:
     """Put ``obj`` in ``collaboration``, with what it needs to be seen. Put in again by hand, it stays
@@ -129,7 +131,9 @@ def add(
     return item
 
 
-def _objects(items: Any) -> list[tuple[CollaborationItem, Any]]:
+def _objects(
+    items: Iterable[Any],
+) -> list[tuple[CollaborationItem, Model]]:
     """Each item with its object; an item whose object is gone is left out."""
     found = []
     for item in items:
@@ -144,7 +148,7 @@ def _objects(items: Any) -> list[tuple[CollaborationItem, Any]]:
     return found
 
 
-def remove(collaboration: Collaboration, obj: Any) -> bool:
+def remove(collaboration: Collaboration, obj: Model) -> bool:
     """Take ``obj`` out of ``collaboration``, with what it brought, unless something still there needs it.
     Returns whether it was there."""
     with transaction.atomic():
@@ -165,7 +169,7 @@ def remove(collaboration: Collaboration, obj: Any) -> bool:
     return True
 
 
-def refresh(obj: Any) -> None:
+def refresh(obj: Model) -> None:
     """Put what ``obj`` needs now in every collaboration it is in: after a part was added that needs more
     (a layer, drawing a dataset, added to a scene in a collaboration)."""
     for item in CollaborationItem.objects.filter(
@@ -174,7 +178,7 @@ def refresh(obj: Any) -> None:
         _bring(item.collaboration, item, obj, item.added_by, {_key(obj)})
 
 
-def include(obj: Any, *, alongside: Any, by: Any = None) -> None:
+def include(obj: Model, *, alongside: Model, by: object = None) -> None:
     """Put ``obj`` in every collaboration ``alongside`` is in, brought by it: a collection minted for a scene."""
     for item in CollaborationItem.objects.filter(
         content_type=content_type_of(alongside), object_id=str(alongside.pk)

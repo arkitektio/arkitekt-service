@@ -30,7 +30,7 @@ from typing import Any
 
 import strawberry
 import strawberry_django
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Model, Q, QuerySet
 from strawberry_django.pagination import OffsetPaginationInput
 
 from arkitekt_service.collaborations import items as collaboration_items
@@ -62,7 +62,7 @@ def _brought_q(brought: bool | None) -> Q:
     return Q(because_of__isnull=not brought)
 
 
-def _identifier(model: Any) -> str | None:
+def _identifier(model: object) -> str | None:
     from arkitekt_service.service.service import Service
 
     structure = Service.hosting(model) if model is not None else None
@@ -177,13 +177,13 @@ class Resolvers:
 def resolvers(fetch: Fetch) -> Resolvers:
     """Resolvers for a service's collaborations; ``fetch(model, id, info)`` loads an object held to the request's organization."""
 
-    def _organization(info: Any) -> Any:
+    def _organization(info: strawberry.Info) -> object:
         return info.context.request.organization
 
-    def _collaboration(info: Any, id: Any) -> models.Collaboration:
+    def _collaboration(info: strawberry.Info, id: object) -> models.Collaboration:
         return models.Collaboration.objects.get(pk=id, organization=_organization(info))
 
-    def _object(info: Any, identifier: str, object_id: Any) -> Any:
+    def _object(info: strawberry.Info, identifier: str, object_id: object) -> Model:
         from arkitekt_service.service.service import Service
 
         structure = Service.hosting(identifier)

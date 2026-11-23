@@ -24,10 +24,14 @@ from collections import defaultdict
 from collections.abc import Iterable
 from contextvars import ContextVar, Token
 from functools import cache
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from django.db.models import CASCADE, BigIntegerField, ForeignKey, Model, Q, QuerySet
 from django.db.models.functions import Cast
+
+if TYPE_CHECKING:
+    from authentikate.base_models import JWTToken
+    from strawberry import Info
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +69,7 @@ def _authentikate() -> bool:
     return apps.is_installed("authentikate")
 
 
-def current_token() -> Any:
+def current_token() -> JWTToken | None:
     """The token the request being served was authenticated with, if authentikate holds one."""
     if not _authentikate():
         return None
@@ -160,10 +164,19 @@ def _types_q(models: Iterable[type]) -> Q:
 # --- a guest -----------------------------------------------------------------------------------
 
 
+class CollaborationToken(Protocol):
+    """What the gate reads of a request's token (authentikate's ``JWTToken`` is one)."""
+
+    @property
+    def is_scoped(self) -> bool: ...
+
+    def collabs_here(self, instance: str | None) -> dict[str, tuple[str, ...]]: ...
+
+
 class Guest:
     """One request's guest: their collaborations here, the roles they hold in each, and what is in them."""
 
-    def __init__(self, token: Any, organization: Any) -> None:
+    def __init__(self, token: CollaborationToken | None, organization: object) -> None:
         self.token = token
         self.organization = organization
         granted = token.collabs_here(current_instance()) if token is not None else {}
@@ -186,7 +199,7 @@ class Guest:
         """Read again what was read: after a write (a mutation), what is part of a collaboration may have grown."""
         self._rows, self._held, self._read_at = {}, None, _changes[0]
 
-    def _collaborations(self) -> Any:
+    def _collaborations(self) -> QuerySet[Any]:
         from arkitekt_service.collaborations.models import Collaboration
 
         return Collaboration.objects.filter(
@@ -321,7 +334,9 @@ class Guest:
         return False
 
 
-def guest_of(info: Any = None, token: Any = None) -> Guest | None:
+def guest_of(
+    info: object = None, token: CollaborationToken | None = None
+) -> Guest | None:
     """The guest of the operation being served (the gate keeps one per operation); None for a full
     member, or no token. Outside an operation the gate serves, a new one, reading afresh."""
     token = current_token() if token is None else token
@@ -341,7 +356,7 @@ def guest_of(info: Any = None, token: Any = None) -> Guest | None:
     return Guest(token, organization)
 
 
-def serve(token: Any) -> Token[Guest | None] | None:
+def serve(token: CollaborationToken | None) -> Token[Guest | None] | None:
     """Keep one guest for the operation about to be served with ``token``; :func:`served` ends it."""
     if token is None or not token.is_scoped:
         return None
@@ -365,7 +380,7 @@ def served(reset: Token[Guest | None] | None) -> None:
 # --- reading and writing -----------------------------------------------------------------------
 
 
-def at_root(info: Any) -> bool:
+def at_root(info: object) -> bool:
     """Whether ``info`` is that of a field an operation enters at (a root field, ``_entities``),
     rather than one below it. A queryset strawberry-django prefetches for a nested field carries
     the root's resolve info, but the nested field (``Info._field``): that one is below."""
@@ -390,7 +405,10 @@ def at_root(info: Any) -> bool:
 
 
 def object_scope(
-    queryset: QuerySet[Any], token: Any = None, *, info: Any = None
+    queryset: QuerySet[Any],
+    token: CollaborationToken | None = None,
+    *,
+    info: object = None,
 ) -> QuerySet[Any]:
     """``queryset``, held to the request's guest's collaborations when it is a guest's.
 
@@ -407,7 +425,7 @@ def object_scope(
     return queryset.filter(guest.q(queryset.model))
 
 
-def kante_narrow(queryset: QuerySet[Any], info: Any) -> QuerySet[Any]:
+def kante_narrow(queryset: QuerySet[Any], info: Info) -> QuerySet[Any]:
     """:func:`object_scope` as kante's narrowing step (``KANTE_OBJECT_SCOPE``)."""
     try:
         token = info.context.request.get_extension("token")
@@ -421,8 +439,8 @@ def require_in_collaboration(
     *,
     any_role_of: Iterable[str] | None = None,
     roles: Iterable[str] | None = None,
-    info: Any = None,
-    token: Any = None,
+    info: object = None,
+    token: CollaborationToken | None = None,
 ) -> None:
     """Refuse a guest's write to ``obj`` unless it is in a collaboration of theirs where they hold the roles
     (``roles``, all; ``any_role_of``, one). A full member passes: their own roles were checked.

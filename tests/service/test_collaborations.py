@@ -1,7 +1,7 @@
 """Collaborations: what a guest is let in to, held to at the root, below it, and when they write."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,6 +13,9 @@ pytest.importorskip("authentikate.models")
 from authentikate.errors import ShareInsufficient  # noqa: E402
 from authentikate.models import Organization, User  # noqa: E402
 from authentikate.strawberry.directives import AuthExtension  # noqa: E402
+from django.db.models import QuerySet
+from pytest_django import DjangoAssertNumQueries
+from strawberry import Info, Schema  # noqa: E402
 from strawberry.extensions import SchemaExtension  # noqa: E402
 from strawberry_django.optimizer import DjangoOptimizerExtension  # noqa: E402
 
@@ -63,7 +66,7 @@ def granted(**collaborations: list[str]) -> Token:
 
 
 @pytest.fixture(autouse=True)
-def lending():
+def lending() -> Iterator[Service]:
     """The lending service, sharing: a shelf brings its loans along, and a loan is shared with its shelf."""
     before = list(Service.sharing)
     Service.sharing.clear()
@@ -78,8 +81,18 @@ def lending():
     Service.sharing[:] = before
 
 
+@dataclass
+class Library:
+    organization: Organization
+    shelves: tuple[Shelf, Shelf]
+    books: list[Book]
+    loans: list[Loan]
+    labels: list[Label]
+    collaboration: Collaboration
+
+
 @pytest.fixture
-def library(db):
+def library(db: None) -> Library:
     organization = Organization.objects.create(identifier="lok#org")
     first, second = (
         Shelf.objects.create(name="first"),
@@ -91,7 +104,7 @@ def library(db):
     collaboration = Collaboration.objects.create(
         organization=organization, name="Reading room"
     )
-    return SimpleNamespace(
+    return Library(
         organization=organization,
         shelves=(first, second),
         books=books,
@@ -102,7 +115,7 @@ def library(db):
 
 
 @pytest.fixture
-def in_organization(library):
+def in_organization(library: Library) -> Iterator[None]:
     """Work in the library's organization, as a request authenticated there does."""
     from authentikate.vars import organization_var
 
@@ -111,12 +124,12 @@ def in_organization(library):
     organization_var.reset(reset)
 
 
-def guest(library, token: Token) -> Guest:
+def guest(library: Library, token: Token) -> Guest:
     return Guest(token, library.organization)
 
 
 class TestWhatIsInASpace:
-    def test_an_object_brings_what_it_needs(self, library):
+    def test_an_object_brings_what_it_needs(self, library: Library) -> None:
         first = library.shelves[0]
         item = items.add(library.collaboration, first)
         loan = CollaborationItem.objects.get(
@@ -125,7 +138,9 @@ class TestWhatIsInASpace:
         assert loan.because_of == item
         assert library.collaboration.items.count() == 2
 
-    def test_its_parts_are_in_it_live_and_its_references_are_not(self, library):
+    def test_its_parts_are_in_it_live_and_its_references_are_not(
+        self, library: Library
+    ) -> None:
         items.add(library.collaboration, library.shelves[0])
         late = Book.objects.create(shelf=library.shelves[0])
         seen = guest(library, granted(**{str(library.collaboration.pk): []}))
@@ -138,7 +153,9 @@ class TestWhatIsInASpace:
             library.loans[1]
         )  # brought along
 
-    def test_taking_out_takes_what_it_brought_unless_another_needs_it(self, library):
+    def test_taking_out_takes_what_it_brought_unless_another_needs_it(
+        self, library: Library
+    ) -> None:
         first = library.shelves[0]
         items.add(library.collaboration, first)
         items.add(library.collaboration, library.loans[0])  # also by hand
@@ -152,7 +169,7 @@ class TestWhatIsInASpace:
             object_id=str(library.loans[0].pk), content_type__model="loan"
         ).exists()  # the shelf still needs it
 
-    def test_refresh_and_include(self, library):
+    def test_refresh_and_include(self, library: Library) -> None:
         first = library.shelves[0]
         items.add(library.collaboration, first)
         newer = Loan.objects.create(shelf=first)
@@ -166,7 +183,9 @@ class TestWhatIsInASpace:
             object_id=str(minted.pk), content_type__model="loan"
         ).because_of.object_id == str(first.pk)
 
-    def test_a_reference_can_be_said_not_to_make_a_part(self, lending, library):
+    def test_a_reference_can_be_said_not_to_make_a_part(
+        self, lending: Service, library: Library
+    ) -> None:
         from arkitekt_service.collaborations import guests
 
         lending.not_part_of(Book, "shelf")
@@ -180,7 +199,7 @@ class TestWhatIsInASpace:
             guests._references.clear()
             wholes.cache_clear()
 
-    def test_a_part_is_shared_with_its_whole_not_alone(self, library):
+    def test_a_part_is_shared_with_its_whole_not_alone(self, library: Library) -> None:
         first = library.shelves[0]
         with pytest.raises(items.SharedWithItsWhole):
             items.add(library.collaboration, library.books[0])  # dies with its shelf
@@ -198,14 +217,16 @@ class TestWhatIsInASpace:
         with pytest.raises(items.SharedWithItsWhole):
             items.add(library.collaboration, library.books[1])  # the other shelf is not
 
-    def test_what_a_row_is_part_of(self):
+    def test_what_a_row_is_part_of(self) -> None:
         assert wholes(Book) == ((Shelf, "shelf"),)
         assert wholes(Loan) == ()  # nullable
         assert wholes(Label) == ()  # PROTECT
 
 
 class TestAGuest:
-    def test_only_collaborations_of_the_organization_hold_anything(self, library):
+    def test_only_collaborations_of_the_organization_hold_anything(
+        self, library: Library
+    ) -> None:
         elsewhere = Collaboration.objects.create(
             organization=Organization.objects.create(identifier="lok#other"),
             name="Elsewhere",
@@ -214,7 +235,7 @@ class TestAGuest:
         seen = guest(library, granted(**{str(elsewhere.pk): ["editor"]}))
         assert not seen.sees(library.shelves[1])
 
-    def test_roles_hold_only_inside_their_collaboration(self, library):
+    def test_roles_hold_only_inside_their_collaboration(self, library: Library) -> None:
         other = Collaboration.objects.create(
             organization=library.organization, name="Viewing room"
         )
@@ -228,7 +249,9 @@ class TestAGuest:
         assert not seen.holds(library.books[1], any_role_of=["editor"])
         assert seen.holds(library.books[1])  # view
 
-    def test_require_in_collaboration(self, library, in_organization):
+    def test_require_in_collaboration(
+        self, library: Library, in_organization: None
+    ) -> None:
         items.add(library.collaboration, library.shelves[0])
         token = granted(**{str(library.collaboration.pk): ["editor"]})
         require_in_collaboration(library.books[0], any_role_of=["editor"], token=token)
@@ -243,8 +266,11 @@ class TestAGuest:
         )  # a full member was checked already
 
     def test_root_narrowing_reads_nothing_until_used(
-        self, library, in_organization, django_assert_num_queries
-    ):
+        self,
+        library: Library,
+        in_organization: None,
+        django_assert_num_queries: DjangoAssertNumQueries,
+    ) -> None:
         items.add(library.collaboration, library.shelves[0])
         token = granted(**{str(library.collaboration.pk): []})
         with django_assert_num_queries(0):
@@ -254,7 +280,9 @@ class TestAGuest:
             object_scope(Book.objects.all(), Token()).count() == 2
         )  # a full member's, as it is
 
-    def test_an_operation_keeps_its_guest(self, library, in_organization):
+    def test_an_operation_keeps_its_guest(
+        self, library: Library, in_organization: None
+    ) -> None:
         from arkitekt_service.collaborations.guests import serve, served
 
         token = granted()
@@ -278,7 +306,9 @@ class BookType:
     id: strawberry.auto
 
     @classmethod
-    def get_queryset(cls, queryset: Any, info: Any, **kwargs: Any) -> Any:
+    def get_queryset(
+        cls, queryset: QuerySet[Any], info: Info, **kwargs: Any
+    ) -> QuerySet[Any]:
         return object_scope(queryset, info=info)
 
 
@@ -287,7 +317,9 @@ class LabelType:
     id: strawberry.auto
 
     @classmethod
-    def get_queryset(cls, queryset: Any, info: Any, **kwargs: Any) -> Any:
+    def get_queryset(
+        cls, queryset: QuerySet[Any], info: Info, **kwargs: Any
+    ) -> QuerySet[Any]:
         return object_scope(queryset, info=info)
 
 
@@ -317,7 +349,9 @@ class ShelfType:
         ).first()  # a resolver of its own: held all the same
 
     @classmethod
-    def get_queryset(cls, queryset: Any, info: Any, **kwargs: Any) -> Any:
+    def get_queryset(
+        cls, queryset: QuerySet[Any], info: Info, **kwargs: Any
+    ) -> QuerySet[Any]:
         return object_scope(queryset, info=info)
 
 
@@ -345,7 +379,7 @@ class Authenticated(SchemaExtension):
 
     token: Any = None
 
-    def on_operation(self):
+    def on_operation(self) -> Iterator[None]:
         from authentikate.vars import organization_var, token_var
 
         reset_token, reset_org = (
@@ -357,7 +391,7 @@ class Authenticated(SchemaExtension):
         organization_var.reset(reset_org)
 
 
-def schema(*extensions: Any) -> Any:
+def schema(*extensions: Any) -> Schema:
     built = strawberry.Schema(
         query=Query, extensions=[Authenticated, *extensions, CollaborationGate]
     )
@@ -367,8 +401,8 @@ def schema(*extensions: Any) -> Any:
 @pytest.mark.django_db
 @pytest.mark.parametrize("optimizer", [True, False], ids=["optimized", "plain"])
 def test_a_guest_is_handed_only_what_is_in_their_collaborations(
-    library, lending, optimizer
-):
+    library: Library, lending: Service, optimizer: bool
+) -> None:
     items.add(library.collaboration, library.shelves[0])
     Authenticated.token = granted(**{str(library.collaboration.pk): []})
     built = schema(*([DjangoOptimizerExtension()] if optimizer else []))
@@ -399,7 +433,9 @@ def test_a_guest_is_handed_only_what_is_in_their_collaborations(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("optimizer", [True, False], ids=["optimized", "plain"])
-def test_who_keeps_what_a_guest_is_handed_comes_with_it(library, optimizer):
+def test_who_keeps_what_a_guest_is_handed_comes_with_it(
+    library: Library, optimizer: bool
+) -> None:
     elsewhere = Organization.objects.create(identifier="lok#elsewhere")
     keeper = User.objects.create(
         username="keeper", sub="keeper", active_organization=elsewhere
@@ -433,7 +469,9 @@ def test_who_keeps_what_a_guest_is_handed_comes_with_it(library, optimizer):
 
 
 @pytest.mark.django_db
-def test_a_root_field_handing_out_no_objects_is_closed_to_a_guest(library):
+def test_a_root_field_handing_out_no_objects_is_closed_to_a_guest(
+    library: Library,
+) -> None:
     Authenticated.token = granted(**{str(library.collaboration.pk): []})
     result = schema().execute_sync("{ tally { total } }")
     (error,) = result.errors
@@ -445,7 +483,7 @@ def test_a_root_field_handing_out_no_objects_is_closed_to_a_guest(library):
     assert schema().execute_sync("{ tally { total } }").data == {"tally": {"total": 2}}
 
 
-def test_the_schema_says_which_structure_a_type_is(lending):
+def test_the_schema_says_which_structure_a_type_is(lending: Service) -> None:
     built = annotate_schema(strawberry.Schema(query=Query), lending)
     sdl = str(built)
     assert 'type ShelfType @identified(by: "@lending/shelf") {' in sdl
@@ -453,7 +491,7 @@ def test_the_schema_says_which_structure_a_type_is(lending):
     assert "type LabelType {" in sdl
 
 
-def test_behind_the_gate_the_service_shares():
+def test_behind_the_gate_the_service_shares() -> None:
     Service.sharing.clear()
     plain = Service("plain")
     annotate_schema(strawberry.Schema(query=Query), plain)
@@ -464,7 +502,9 @@ def test_behind_the_gate_the_service_shares():
     assert Service.sharing == [plain]
 
 
-def test_guests_let_in_without_an_instance_is_a_warning(monkeypatch):
+def test_guests_let_in_without_an_instance_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from arkitekt_service.server.checks import check_guests
 
     monkeypatch.setattr(
@@ -477,7 +517,9 @@ def test_guests_let_in_without_an_instance_is_a_warning(monkeypatch):
     assert check_guests(None) == []
 
 
-def test_a_guest_reads_again_once_a_collaboration_changed(library, in_organization):
+def test_a_guest_reads_again_once_a_collaboration_changed(
+    library: Library, in_organization: None
+) -> None:
     seen = guest(library, granted(**{str(library.collaboration.pk): []}))
     assert not seen.sees(library.shelves[0])
     items.add(library.collaboration, library.shelves[0])
@@ -499,7 +541,9 @@ class Scoped:
         return 3
 
 
-def test_the_contracts_catch_alls_are_told_to_authentikate(monkeypatch):
+def test_the_contracts_catch_alls_are_told_to_authentikate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from authentikate.catch_alls import catch_alls, declare_catch_alls
 
     monkeypatch.setenv("ARKITEKT_SERVICE", "tests.contract.example")
@@ -513,7 +557,9 @@ def test_the_contracts_catch_alls_are_told_to_authentikate(monkeypatch):
         declare_catch_alls(scope=None, role=None)
 
 
-def test_every_root_field_asks_for_a_scope_the_contract_declares(monkeypatch):
+def test_every_root_field_asks_for_a_scope_the_contract_declares(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from arkitekt_service.graphql import scope_gaps
 
     monkeypatch.setenv("ARKITEKT_SERVICE", "tests.contract.example")

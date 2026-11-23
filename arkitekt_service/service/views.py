@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
@@ -87,7 +88,7 @@ def _signed(request: HttpRequest, response: HttpResponse) -> HttpResponse:
     return JsonResponse({"signature": signature})
 
 
-def answers_challenge(view: Any) -> Any:
+def answers_challenge(view: Callable[..., Any]) -> Callable[..., Any]:
     """Make a health view answer fakts' signed alias challenge (wrap the ``ht`` route with it).
 
     ``GET ht?nonce=<nonce>`` is answered with ``{"signature": ...}`` (:func:`trust.sign_challenge`)

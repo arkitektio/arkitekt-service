@@ -6,15 +6,16 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 from joserfc.jwk import OKPKey
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 from arkitekt_service import trust
 from arkitekt_service.hook import HookAgent, StructurePort, StructureRef
 from hook_project.urls import agent
-from tests.hook.conftest import as_rekuest
+from tests.hook.conftest import Intake, as_rekuest
 
 
 class TestDeclaration:
-    def test_an_agent_needs_no_service(self):
+    def test_an_agent_needs_no_service(self) -> None:
         local = HookAgent("alone", description="Works alone.")
         assert local.manifest() == {
             "agent": "alone",
@@ -24,7 +25,7 @@ class TestDeclaration:
             "manifest_version": 2,
         }
 
-    def test_actions_take_name_and_description_from_the_docstring(self):
+    def test_actions_take_name_and_description_from_the_docstring(self) -> None:
         local = HookAgent("doc")
 
         @local.action
@@ -52,26 +53,28 @@ class TestDeclaration:
             None,
         )
 
-    def test_an_action_cannot_be_wired_to_a_schedule(self):
+    def test_an_action_cannot_be_wired_to_a_schedule(self) -> None:
         with pytest.raises(TypeError):
             HookAgent("x").action(default_interval=5)
 
-    def test_an_interface_cannot_be_taken_twice(self):
+    def test_an_interface_cannot_be_taken_twice(self) -> None:
         local = HookAgent("twice")
         local.action(interface="a")(lambda: {})
         with pytest.raises(ValueError):
             local.action(interface="a")(lambda: {})
 
-    def test_agents_do_not_share_actions(self):
+    def test_agents_do_not_share_actions(self) -> None:
         a, b = HookAgent("a"), HookAgent("b")
         a.action(interface="only_a")(lambda: {})
         assert list(a.actions) == ["only_a"] and b.actions == {}
 
-    def test_the_settings_name_overrides_the_declared_one(self, settings):
+    def test_the_settings_name_overrides_the_declared_one(
+        self, settings: SettingsWrapper
+    ) -> None:
         settings.REKUEST_HOOK = {**settings.REKUEST_HOOK, "AGENT": "worker-2"}
         assert HookAgent("worker").agent_name() == "worker-2"
 
-    def test_the_identifier_is_the_instances(self, settings):
+    def test_the_identifier_is_the_instances(self, settings: SettingsWrapper) -> None:
         assert HookAgent("mikro").signing_identifier() == "mikro"
         # An agent named otherwise than the instance it runs in says whose key it signs with.
         assert HookAgent("nightly", identifier="mikro").signing_identifier() == "mikro"
@@ -80,7 +83,7 @@ class TestDeclaration:
 
 
 class TestPorts:
-    def test_a_structure_port_is_offered_as_rekuest_spells_it(self):
+    def test_a_structure_port_is_offered_as_rekuest_spells_it(self) -> None:
         local = HookAgent("ingest")
 
         @local.action(
@@ -107,19 +110,19 @@ class TestPorts:
             }
         ]
 
-    def test_a_port_must_be_a_parameter_of_the_function(self):
+    def test_a_port_must_be_a_parameter_of_the_function(self) -> None:
         with pytest.raises(ValueError, match="does not take"):
             HookAgent("x").action(args=[StructurePort("metric", "@mikro/metric")])(
                 lambda: {}
             )
 
-    def test_the_organization_is_never_a_port(self):
+    def test_the_organization_is_never_a_port(self) -> None:
         with pytest.raises(ValueError, match="fills it in"):
             HookAgent("x").action(
                 args=[StructurePort("organization", "@lok/organization")]
             )(lambda organization: {})
 
-    def test_a_port_is_declared_once(self):
+    def test_a_port_is_declared_once(self) -> None:
         with pytest.raises(ValueError, match="twice"):
             HookAgent("x").action(
                 args=[StructurePort("a", "@x/a"), StructurePort("a", "@x/a")]
@@ -127,7 +130,7 @@ class TestPorts:
 
 
 class TestEndpoints:
-    def test_the_manifest_is_signed_and_lists_the_actions(self):
+    def test_the_manifest_is_signed_and_lists_the_actions(self) -> None:
         agent.action(interface="tidy")(lambda: {})
         client = Client()
         url = reverse("rekuest_hook_manifest")
@@ -138,14 +141,16 @@ class TestEndpoints:
         assert [a["interface"] for a in manifest["actions"]] == ["tidy"]
         assert "structures" not in manifest and "signals" not in manifest
 
-    def test_only_rekuest_signing_for_this_agent_is_let_in(self, settings):
+    def test_only_rekuest_signing_for_this_agent_is_let_in(
+        self, settings: SettingsWrapper
+    ) -> None:
         url = reverse("rekuest_hook")
         body = json.dumps(
             {"type": "ASSIGN", "task": "1", "interface": "tidy", "args": {}}
         ).encode()
         client = Client()
 
-        def post(headers):
+        def post(headers: dict[str, str]) -> int:
             return client.post(
                 url, data=body, content_type="application/json", headers=headers
             ).status_code
@@ -174,7 +179,9 @@ class TestEndpoints:
         settings.REKUEST_HOOK = None
         assert post(as_rekuest("POST", url, body)) == 503
 
-    def test_an_assign_runs_and_reports_started_yield_completed(self, intake):
+    def test_an_assign_runs_and_reports_started_yield_completed(
+        self, intake: Intake
+    ) -> None:
         agent.action(interface="tidy")(lambda: {"acted": 3})
         body = json.dumps(
             {"type": "ASSIGN", "task": "41", "interface": "tidy", "args": {}}
@@ -200,7 +207,7 @@ class TestEndpoints:
             r["issuer"] == "worker" for r in reports
         )  # signed with the instance key
 
-    def test_an_assign_runs_inside_the_trace_it_names(self, intake):
+    def test_an_assign_runs_inside_the_trace_it_names(self, intake: Intake) -> None:
         from arkitekt_service import telemetry
 
         agent.action(interface="traced")(lambda: telemetry.headers())
@@ -238,7 +245,9 @@ class TestEndpoints:
             "the second run's YIELD: a task in no trace starts none"
         )
 
-    def test_an_action_is_told_which_organization_it_runs_for(self, intake):
+    def test_an_action_is_told_which_organization_it_runs_for(
+        self, intake: Intake
+    ) -> None:
         agent.action(interface="tidy_org")(
             lambda organization: {"tidied": organization}
         )
@@ -268,7 +277,7 @@ class TestEndpoints:
         assert [e["type"] for e in events] == ["STARTED", "YIELD", "COMPLETED"]
         assert events[1]["returns"] == {"tidied": "lab"}
 
-    def test_an_async_action_is_awaited(self, intake):
+    def test_an_async_action_is_awaited(self, intake: Intake) -> None:
         async def later() -> dict:
             return {"awaited": True}
 
@@ -285,7 +294,7 @@ class TestEndpoints:
         )
         assert intake.wait(3)[1]["json"]["returns"] == {"awaited": True}
 
-    def test_a_failing_action_reports_critical(self, intake):
+    def test_a_failing_action_reports_critical(self, intake: Intake) -> None:
         def broken() -> dict:
             raise RuntimeError("disk full")
 
@@ -304,7 +313,7 @@ class TestEndpoints:
         assert [r["json"]["type"] for r in reports] == ["STARTED", "CRITICAL"]
         assert "disk full" in reports[1]["json"]["error"]
 
-    def test_an_unknown_interface_is_refused_and_reported(self, intake):
+    def test_an_unknown_interface_is_refused_and_reported(self, intake: Intake) -> None:
         body = json.dumps(
             {"type": "ASSIGN", "task": "43", "interface": "nothing", "args": {}}
         ).encode()
@@ -323,7 +332,7 @@ class TestEndpoints:
         (report,) = intake.wait(1)
         assert report["json"]["type"] == "CRITICAL"
 
-    def test_a_structure_port_is_handed_over_as_a_ref(self, intake):
+    def test_a_structure_port_is_handed_over_as_a_ref(self, intake: Intake) -> None:
         @agent.action(
             interface="ingest",
             args=[StructurePort("metric", "@mikro/metric", nullable=True)],
@@ -362,7 +371,7 @@ class TestEndpoints:
             "metric": ["@mikro/metric", "8812"],
         }
 
-    def test_a_left_out_nullable_port_is_none(self, intake):
+    def test_a_left_out_nullable_port_is_none(self, intake: Intake) -> None:
         """A schedule's run gives no object: the same action runs with None."""
 
         @agent.action(
@@ -389,7 +398,7 @@ class TestEndpoints:
         )
         assert intake.wait(3)[1]["json"]["returns"] == {"metric": None}
 
-    def test_an_object_of_another_structure_is_refused(self, intake):
+    def test_an_object_of_another_structure_is_refused(self, intake: Intake) -> None:
         @agent.action(
             interface="strict", args=[StructurePort("metric", "@mikro/metric")]
         )
@@ -417,7 +426,7 @@ class TestEndpoints:
             )
         assert [r["json"]["type"] for r in intake.wait(2)] == ["CRITICAL", "CRITICAL"]
 
-    def test_undeclared_arguments_are_not_passed_on(self, intake):
+    def test_undeclared_arguments_are_not_passed_on(self, intake: Intake) -> None:
         agent.action(interface="plain")(lambda: {"ran": True})
         url = reverse("rekuest_hook")
         body = json.dumps(

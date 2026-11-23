@@ -34,9 +34,14 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from django.conf import settings
+
+if TYPE_CHECKING:
+    from joserfc.jwk import OKPKey
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 #: 1: ``agent``, ``identifier``, ``description`` and ``actions``.
 #: 2: each action's ``args``, its STRUCTURE ports.
@@ -166,7 +171,7 @@ class HookAgent:
         *,
         identifier: str | None = None,
         description: str | None = None,
-        key: Any = None,
+        key: OKPKey | None = None,
     ) -> None:
         self.name = name
         #: The key this agent signs with; None (the rule) = this instance's key
@@ -181,16 +186,31 @@ class HookAgent:
 
     # --- declaring -----------------------------------------------------------------------
 
+    @overload
+    def action(self, function: _F, /) -> _F: ...
+
+    @overload
     def action(
         self,
-        function: Callable[..., Any] | None = None,
+        function: None = None,
         /,
         *,
         interface: str | None = None,
         name: str | None = None,
         description: str | None = None,
         args: Sequence[StructurePort] = (),
-    ) -> Any:
+    ) -> Callable[[_F], _F]: ...
+
+    def action(
+        self,
+        function: _F | None = None,
+        /,
+        *,
+        interface: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        args: Sequence[StructurePort] = (),
+    ) -> _F | Callable[[_F], _F]:
         """Offer ``function`` (sync or async) as an action; ``@agent.action`` or ``@agent.action(...)``.
 
         The function takes the ``args`` declared (each a :class:`StructurePort`, handed over as a
@@ -200,7 +220,7 @@ class HookAgent:
         twice — a lost report may get it redelivered.
         """
 
-        def register(target: Callable[..., Any]) -> Callable[..., Any]:
+        def register(target: _F) -> _F:
             key = interface or target.__name__
             _check_ports(key, target, args)
             doc_name, doc_description = _docstring_parts(target)
@@ -251,7 +271,7 @@ class HookAgent:
             return None
         return config
 
-    def signing_key(self) -> Any:
+    def signing_key(self) -> OKPKey | None:
         """What this agent signs with: its own ``key``, else this instance's key."""
         from arkitekt_service.trust import instance_key
 

@@ -5,6 +5,7 @@ from django.conf import settings
 
 from arkitekt_service.service import Descriptor, Service
 from test_app.models import Book, Shelf
+from tests.service.conftest import Intake
 
 hosting = Service("hosting", key=settings.THINGS_KEY)
 shelf = hosting.structure(
@@ -25,7 +26,7 @@ book = hosting.structure(
 
 
 class TestDeclaration:
-    def test_the_manifest_lists_the_structures(self):
+    def test_the_manifest_lists_the_structures(self) -> None:
         manifest = hosting.manifest()
         assert manifest["structures"] == [
             {
@@ -50,16 +51,18 @@ class TestDeclaration:
             },
         ]
 
-    def test_hosting_declares_no_signal(self):
+    def test_hosting_declares_no_signal(self) -> None:
         assert hosting.manifest()["signals"] == [] and hosting.signals == {}
 
-    def test_a_structure_is_found_by_identifier_model_and_instance(self):
+    def test_a_structure_is_found_by_identifier_model_and_instance(self) -> None:
         assert hosting.structure_for("@hosting/shelf") is shelf
         assert hosting.structure_for(Book) is book
         assert hosting.structure_for(Shelf(name="x")) is shelf
         assert hosting.structure_for("@hosting/nothing") is None
 
-    def test_declaring_it_again_the_same_way_is_fine_and_differently_is_not(self):
+    def test_declaring_it_again_the_same_way_is_fine_and_differently_is_not(
+        self,
+    ) -> None:
         other = Service("other")
         first = other.structure(Shelf, "@other/thing", descriptors=["@other/a"])
         assert other.structure(Shelf, "@other/thing", descriptors=["@other/a"]) is first
@@ -68,7 +71,7 @@ class TestDeclaration:
         with pytest.raises(ValueError, match="already hosted"):
             other.structure(Shelf, "@other/item")
 
-    def test_what_cannot_be_declared(self):
+    def test_what_cannot_be_declared(self) -> None:
         other = Service("other")
         with pytest.raises(ValueError, match="@package/key"):
             other.structure(Shelf, "thing")
@@ -77,7 +80,7 @@ class TestDeclaration:
         with pytest.raises(ValueError, match="descriptor type"):
             Descriptor("@other/a", "NUMBER")
 
-    def test_a_model_that_cannot_keep_its_descriptors_cannot_declare_any(self):
+    def test_a_model_that_cannot_keep_its_descriptors_cannot_declare_any(self) -> None:
         from test_app.models import Part
 
         other = Service("other")
@@ -88,7 +91,9 @@ class TestDeclaration:
 
 @pytest.mark.django_db(transaction=True)
 class TestDescribing:
-    def test_objects_are_described_and_their_saves_are_not_announced(self, intake):
+    def test_objects_are_described_and_their_saves_are_not_announced(
+        self, intake: Intake
+    ) -> None:
         made = Book.objects.create(shelf=Shelf.objects.create(name="host"))
         assert hosting.describe(made) == {"@hosting/on": "host"}
         # The shelf was saved before its book: what counts the book is restored by its writer.
@@ -99,5 +104,5 @@ class TestDescribing:
         }
         assert intake.wait(1, timeout=0.5) == []
 
-    def test_a_model_nobody_hosts_has_no_descriptors(self):
+    def test_a_model_nobody_hosts_has_no_descriptors(self) -> None:
         assert Service("empty").describe(Shelf(name="x")) == {}

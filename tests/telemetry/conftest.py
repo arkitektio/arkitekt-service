@@ -9,13 +9,16 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import TypeVar
 
 import httpx
 import psycopg
 import pytest
 from dokker import PortNotFoundError, testing
+
+_T = TypeVar("_T")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
@@ -31,7 +34,7 @@ class Stack:
     db_port: int
 
 
-def _until(ready, timeout: float = 90.0):
+def _until(ready: Callable[[], _T], timeout: float = 90.0) -> _T:
     deadline = time.monotonic() + timeout
     while True:
         try:

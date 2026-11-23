@@ -9,6 +9,7 @@ from django.db import transaction
 
 from arkitekt_service.service import Service
 from test_app.models import Barrel, Bottle, Crate
+from tests.service.conftest import Intake
 
 crates = Service("crates", key=settings.THINGS_KEY)
 
@@ -33,7 +34,7 @@ def _stored(made: Crate) -> dict:
 
 @pytest.mark.django_db
 class TestStoring:
-    def test_a_save_stores_what_the_row_says(self):
+    def test_a_save_stores_what_the_row_says(self) -> None:
         made = Crate.objects.create(name="a")
         assert (
             _stored(made)
@@ -41,13 +42,13 @@ class TestStoring:
             == {"@crates/status": "OPEN", "@crates/n_bottles": 0}
         )
 
-    def test_a_save_of_some_fields_stores_them_too(self):
+    def test_a_save_of_some_fields_stores_them_too(self) -> None:
         made = Crate.objects.create(name="a")
         made.status = "SEALED"
         made.save(update_fields=["status"])
         assert _stored(made)["@crates/status"] == "SEALED"
 
-    def test_rows_written_later_are_restored_by_their_writer(self):
+    def test_rows_written_later_are_restored_by_their_writer(self) -> None:
         made = Crate.objects.create(name="a")
         Bottle.objects.create(crate=made)
         Bottle.objects.create(crate=made)
@@ -59,7 +60,7 @@ class TestStoring:
         )
         assert crates.restore(made) == 0
 
-    def test_a_queryset_is_restored_row_by_row(self):
+    def test_a_queryset_is_restored_row_by_row(self) -> None:
         first, second = Crate.objects.create(name="a"), Crate.objects.create(name="b")
         Bottle.objects.create(crate=second)
         Crate.objects.update(status="SEALED")  # a bulk write: no pre_save
@@ -69,7 +70,7 @@ class TestStoring:
             {"@crates/status": "SEALED", "@crates/n_bottles": 1},
         ]
 
-    def test_bulk_written_rows_are_stamped_first(self):
+    def test_bulk_written_rows_are_stamped_first(self) -> None:
         rows = [Crate.objects.create(name="a"), Crate.objects.create(name="b")]
         rows[0].status = "SEALED"
         Crate.objects.bulk_update(crates.stamp(rows), ["status", "stored_descriptors"])
@@ -77,7 +78,7 @@ class TestStoring:
 
     def test_a_describer_that_raises_keeps_what_the_row_had_and_the_save_goes_through(
         self,
-    ):
+    ) -> None:
         made = Crate.objects.create(name="a")
         made.name, made.status = "unreadable", "SEALED"
         made.save()
@@ -88,10 +89,10 @@ class TestStoring:
 @pytest.mark.django_db
 class TestTheSetupJob:
     @pytest.fixture(autouse=True)
-    def mounted(self, monkeypatch):
+    def mounted(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(Service, "mounted", [crates])
 
-    def test_it_stores_what_a_row_owes_and_leaves_the_rest(self):
+    def test_it_stores_what_a_row_owes_and_leaves_the_rest(self) -> None:
         owed, kept = (
             Crate.objects.create(name="owed"),
             Crate.objects.create(name="kept"),
@@ -102,7 +103,7 @@ class TestTheSetupJob:
         assert _stored(owed) == {"@crates/status": "OPEN", "@crates/n_bottles": 0}
         assert _stored(kept)["@crates/n_bottles"] == 0  # stale, but owes no key
 
-    def test_all_describes_every_row_again(self):
+    def test_all_describes_every_row_again(self) -> None:
         kept = Crate.objects.create(name="kept")
         Bottle.objects.create(crate=kept)
         call_command("restore_descriptors", "--all")
@@ -116,7 +117,7 @@ class Asked:
     value: object = None
 
 
-def test_only_what_a_structure_declares_can_be_required():
+def test_only_what_a_structure_declares_can_be_required() -> None:
     assert (
         crates.requires(Crate, [Asked("@crates/status", "EQUALS", "OPEN")]) is not None
     )
@@ -141,7 +142,9 @@ barrels.model_signal(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_row_restored_on_its_way_out_is_not_announced_as_updated(intake):
+def test_a_row_restored_on_its_way_out_is_not_announced_as_updated(
+    intake: Intake,
+) -> None:
     made = Barrel.objects.create(name="doomed")
     with transaction.atomic():
         Barrel.objects.filter(pk=made.pk).update(name="renamed")

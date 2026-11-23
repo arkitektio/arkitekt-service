@@ -76,7 +76,7 @@ class Structure:
     #: What an object is shared with, when no required, cascading key says so: a lens's dataset.
     whole: Callable[[Any], Any] | None = field(default=None, compare=False)
 
-    def dependencies(self, obj: Any) -> list[Any]:
+    def dependencies(self, obj: object) -> list[Any]:
         """What ``obj`` needs to be seen, besides what is part of it: ``depends(obj)``, Nones dropped."""
         return [
             found
@@ -88,11 +88,11 @@ class Structure:
     def keys(self) -> tuple[str, ...]:
         return tuple(d.key for d in self.descriptors)
 
-    def compute(self, obj: Any) -> dict[str, Any]:
+    def compute(self, obj: object) -> dict[str, Any]:
         """Run the describer on ``obj``: what is stored on it (``stored_descriptors``) when it is saved or restored."""
         return dict(self.describer(obj)) if self.describer is not None else {}
 
-    def describe(self, obj: Any) -> dict[str, Any]:
+    def describe(self, obj: object) -> dict[str, Any]:
         """The descriptors of ``obj`` as they are stored on it — what signals for it carry and its ``descriptors`` field returns."""
         return dict(getattr(obj, "stored_descriptors", None) or {})
 

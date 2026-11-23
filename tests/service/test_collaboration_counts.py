@@ -6,6 +6,7 @@ paging both lists -- held to a guest's collaborations before a page is cut, not 
 """
 # ruff: noqa: F811 -- the fixtures shared with test_collaborations are imported, then requested by name
 
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,7 +16,10 @@ strawberry = pytest.importorskip("strawberry")
 pytest.importorskip("authentikate.models")
 
 from authentikate.models import Organization
+from pytest_django import DjangoAssertNumQueries
+from strawberry import Info
 from strawberry.extensions import FieldExtension
+from strawberry.types import ExecutionResult
 
 from arkitekt_service.collaborations import graphql as collaboration_types
 from arkitekt_service.collaborations import items
@@ -23,6 +27,7 @@ from arkitekt_service.collaborations.models import Collaboration
 from arkitekt_service.graphql import CollaborationGate
 from tests.service.test_collaborations import (
     Authenticated,
+    Library,
     Token,
     granted,
     lending,  # noqa: F401
@@ -39,7 +44,13 @@ class AllowScoped(FieldExtension):
 
     allow_scoped = True
 
-    def resolve(self, next_: Any, source: Any, info: Any, **kwargs: Any) -> Any:
+    def resolve(
+        self,
+        next_: Callable[..., object],
+        source: object,
+        info: Info,
+        **kwargs: Any,
+    ) -> object:
         return next_(source, info, **kwargs)
 
 
@@ -64,7 +75,7 @@ class Served:
 
     def execute_sync(
         self, query: str, variable_values: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> ExecutionResult:
         return self.schema.execute_sync(
             query,
             variable_values=variable_values,
@@ -79,7 +90,7 @@ def schema() -> Served:
 
 
 @pytest.fixture
-def filled(library):
+def filled(library: Library) -> tuple[Library, Collaboration]:
     """The reading room holds the first shelf, the archive the second: each brings its loan."""
     items.add(library.collaboration, library.shelves[0])
     other = Collaboration.objects.create(
@@ -91,7 +102,10 @@ def filled(library):
 
 
 @pytest.mark.django_db
-def test_each_collaboration_counts_what_is_in_it(filled, django_assert_max_num_queries):
+def test_each_collaboration_counts_what_is_in_it(
+    filled: tuple[Library, Collaboration],
+    django_assert_max_num_queries: DjangoAssertNumQueries,
+) -> None:
     Authenticated.token = Token()
 
     served = schema()
@@ -113,7 +127,7 @@ def test_each_collaboration_counts_what_is_in_it(filled, django_assert_max_num_q
 
 
 @pytest.mark.django_db
-def test_items_page_and_split_on_brought(filled):
+def test_items_page_and_split_on_brought(filled: tuple[Library, Collaboration]) -> None:
     Authenticated.token = Token()
     query = """
     query {
@@ -139,7 +153,7 @@ def test_items_page_and_split_on_brought(filled):
 
 
 @pytest.mark.django_db
-def test_the_root_list_pages(filled):
+def test_the_root_list_pages(filled: tuple[Library, Collaboration]) -> None:
     Authenticated.token = Token()
     pages = [
         schema()
@@ -158,7 +172,7 @@ def test_the_root_list_pages(filled):
 
 
 @pytest.mark.django_db
-def test_stats_count_what_the_list_lists(filled):
+def test_stats_count_what_the_list_lists(filled: tuple[Library, Collaboration]) -> None:
     Authenticated.token = Token()
     result = schema().execute_sync("{ collaborationsStats { count itemCount } }")
     assert result.errors is None, result.errors
@@ -166,7 +180,9 @@ def test_stats_count_what_the_list_lists(filled):
 
 
 @pytest.mark.django_db
-def test_a_guest_counts_and_pages_only_their_own(filled):
+def test_a_guest_counts_and_pages_only_their_own(
+    filled: tuple[Library, Collaboration],
+) -> None:
     _, other = filled
     Authenticated.token = granted(**{str(other.pk): []})
 

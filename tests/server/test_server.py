@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import yaml
 from django.contrib.auth import get_user_model
 from django.core.checks import run_checks
 from django.core.management import call_command
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 CONFIG = {
     "django": {
@@ -31,11 +33,13 @@ CONFIG = {
 
 
 @pytest.fixture()
-def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Callable[[dict[str, object]], Path]:
     """Write a config file and point the service at it; returns the writer."""
     monkeypatch.setenv("ARKITEKT_SERVICE", "tests.server.served")
 
-    def write(document: dict) -> Path:
+    def write(document: dict[str, object]) -> Path:
         path = tmp_path / "config.yaml"
         path.write_text(yaml.safe_dump(document))
         monkeypatch.setenv("ARKITEKT_CONFIG_FILE", str(path))
@@ -46,7 +50,7 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_the_settings_are_read_from_the_file_with_the_environment_over_it(
-    config, monkeypatch: pytest.MonkeyPatch
+    config: Callable[[dict[str, object]], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.server.served import Settings
 
@@ -63,7 +67,7 @@ def test_the_settings_are_read_from_the_file_with_the_environment_over_it(
 
 @pytest.mark.django_db
 def test_ensureadmin_creates_the_configured_account_once(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     call_command("ensureadmin")
     user = get_user_model().objects.get(username="operator")
@@ -86,7 +90,7 @@ def test_ensureadmin_creates_the_configured_account_once(
 
 @pytest.mark.django_db
 def test_ensureadmin_has_nothing_to_do_without_an_admin(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     config({**CONFIG, "django": {"secret_key": "s3cret"}})
     call_command("ensureadmin")
@@ -95,7 +99,7 @@ def test_ensureadmin_has_nothing_to_do_without_an_admin(
 
 
 def test_validate_settings_prints_the_config_with_its_secrets_masked(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     call_command("validate_settings")
     out = capsys.readouterr().out
@@ -105,7 +109,7 @@ def test_validate_settings_prints_the_config_with_its_secrets_masked(
 
 
 def test_validate_settings_refuses_a_config_the_release_cannot_start_with(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     config({key: value for key, value in CONFIG.items() if key != "postgres"})
     with pytest.raises(SystemExit) as stopped:
@@ -115,7 +119,7 @@ def test_validate_settings_refuses_a_config_the_release_cannot_start_with(
 
 
 def test_a_key_the_release_does_not_read_is_said_and_fails_only_when_strict(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     config({**CONFIG, "django": {**CONFIG["django"], "debgu": True}})
     call_command("validate_settings")
@@ -127,7 +131,7 @@ def test_a_key_the_release_does_not_read_is_said_and_fails_only_when_strict(
 
 
 def test_an_open_block_passes_its_extras_on_unjudged(
-    config, capsys: pytest.CaptureFixture[str]
+    config: Callable[[dict[str, object]], Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``postgres.sslmode`` is a driver option, not a misspelling."""
     call_command("validate_settings", "--strict")
@@ -136,7 +140,9 @@ def test_an_open_block_passes_its_extras_on_unjudged(
 
 # The model checks ask the database what it can default (`stored_descriptors`' db_default).
 @pytest.mark.django_db
-def test_migrate_warns_about_what_the_release_does_not_read(config) -> None:
+def test_migrate_warns_about_what_the_release_does_not_read(
+    config: Callable[[dict[str, object]], Path],
+) -> None:
     config({**CONFIG, "django": {**CONFIG["django"], "debgu": True}})
     warnings = [message for message in run_checks() if message.id == "arkitekt.W001"]
     assert [message.msg for message in warnings] == [
@@ -159,7 +165,7 @@ def test_a_process_that_is_no_service_is_not_judged(
 
 @pytest.mark.django_db
 def test_a_service_can_prove_what_its_migrate_job_does(
-    config, monkeypatch: pytest.MonkeyPatch
+    config: Callable[[dict[str, object]], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The three checks a service's suite makes of its own contract."""
     import dataclasses
@@ -197,7 +203,7 @@ def test_only_the_services_own_apps_are_held_to_their_migrations() -> None:
 
 @pytest.mark.django_db
 def test_a_suite_that_switches_migrations_off_is_still_held_to_the_committed_ones(
-    settings,
+    settings: SettingsWrapper,
 ) -> None:
     """What a hub runs is the committed migrations, whatever a suite builds its tables from."""
     from arkitekt_service import prepared

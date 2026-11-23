@@ -37,16 +37,20 @@ import logging
 import uuid
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Model, Q
 
 from arkitekt_service.contract.description import Hosts
 from arkitekt_service.service.described import Described
 from arkitekt_service.service.requires import Constraint, requires_q
 from arkitekt_service.service.structures import Descriptor, Structure, check_identifier
+
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
+    from joserfc.jwk import OKPKey
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +64,7 @@ MANIFEST_VERSION = 3
 RESTORE_BATCH = 500
 
 
-def _stored_now(instance: Any) -> dict[str, Any] | None:
+def _stored_now(instance: Model) -> dict[str, Any] | None:
     """What the database holds for ``instance`` now: a restore after the save may have changed it. None when the row is gone."""
     rows = list(
         type(instance)
@@ -101,7 +105,7 @@ def organization_of(path: str = "organization") -> Callable[[Any], str | None]:
     (``"<iss>#<org>"``, the same in every service)."""
     steps = path.split(".")
 
-    def resolve(obj: Any) -> str | None:
+    def resolve(obj: object) -> str | None:
         for step in steps:
             obj = getattr(obj, step, None)
             if obj is None:
@@ -125,7 +129,7 @@ class Signal:
 
     def emit(
         self,
-        object: Any,
+        object: object,
         *,
         organization: str,
         descriptors: dict[str, Any] | None = None,
@@ -182,7 +186,7 @@ class Service:
         *,
         identifier: str | None = None,
         description: str | None = None,
-        key: Any = None,
+        key: OKPKey | None = None,
         hosts: Hosts | None = None,
     ) -> None:
         self.name = name
@@ -212,7 +216,7 @@ class Service:
 
     def structure(
         self,
-        model: Any,
+        model: type,
         identifier: str,
         *,
         descriptors: Iterable[Descriptor | str] | None = None,
@@ -325,7 +329,7 @@ class Service:
 
         enforce()
 
-    def not_part_of(self, model: Any, *fields: str) -> None:
+    def not_part_of(self, model: type, *fields: str) -> None:
         """Say that ``model``'s cascading foreign keys ``fields`` point at something shared, not at a
         whole: a layer is its scene's, not part of the lens it draws through, which many scenes draw.
         What is part of an object in a collaboration is in it too: these never bring a row along."""
@@ -334,7 +338,7 @@ class Service:
         not_part_of(model, *fields)
 
     @classmethod
-    def hosting(cls, target: Any) -> Structure | None:
+    def hosting(cls, target: object) -> Structure | None:
         """The structure an identifier or a model (class or instance) is hosted as, by any sharing service."""
         for service in cls.sharing:
             found = service.structure_for(target)
@@ -345,7 +349,9 @@ class Service:
     def _store_on_save(self, declared: Structure) -> None:
         from django.db.models.signals import post_save, pre_save
 
-        def store(sender: Any, instance: Any, raw: bool = False, **_: Any) -> None:
+        def store(
+            sender: type[Model], instance: Described, raw: bool = False, **_: Any
+        ) -> None:
             # A fixture states its own column. A row the database has not numbered yet is
             # described once it is (below): before that, no relation of it can be read.
             if raw or instance.pk is None:
@@ -356,8 +362,8 @@ class Service:
             )
 
         def store_inserted(
-            sender: Any,
-            instance: Any,
+            sender: type[Model],
+            instance: Described,
             created: bool = False,
             raw: bool = False,
             **_: Any,
@@ -379,7 +385,7 @@ class Service:
         )
 
     @staticmethod
-    def _computed(declared: Structure, instance: Any) -> dict[str, Any]:
+    def _computed(declared: Structure, instance: Model) -> dict[str, Any]:
         """The describer's answer, or what the row had when it raises: a save never fails because of it."""
         try:
             return declared.compute(instance)
@@ -409,7 +415,7 @@ class Service:
                 row.stored_descriptors = self._computed(declared, row)
         return stamped
 
-    def restore(self, target: Any, *, emit: bool = True) -> int:
+    def restore(self, target: Described | QuerySet[Any], *, emit: bool = True) -> int:
         """Recompute and store the descriptors of a row, or of every row of a queryset, as the database holds it.
 
         For what a save of the row did not see: rows written after it that a descriptor counts,
@@ -468,7 +474,7 @@ class Service:
         return changed
 
     def requires(
-        self, model: Any, constraints: Sequence[Constraint], prefix: str = ""
+        self, model: type, constraints: Sequence[Constraint], prefix: str = ""
     ) -> Q:
         """The rows of ``model`` satisfying a port's ``requires``: one condition on their stored descriptors.
 
@@ -491,7 +497,7 @@ class Service:
     def structures(self) -> dict[str, Structure]:
         return dict(self._structures)
 
-    def structure_for(self, target: Any) -> Structure | None:
+    def structure_for(self, target: object) -> Structure | None:
         """The structure declared under an identifier, or for a model (class or instance)."""
         if isinstance(target, str):
             return self._structures.get(target)
@@ -508,7 +514,7 @@ class Service:
             None,
         )
 
-    def describe(self, obj: Any) -> dict[str, Any]:
+    def describe(self, obj: Model) -> dict[str, Any]:
         """The descriptors of ``obj`` as its structure declares them; ``{}`` for a model no structure hosts."""
         declared = self.structure_for(obj)
         return declared.describe(obj) if declared is not None else {}
@@ -564,7 +570,7 @@ class Service:
 
     def model_signal(
         self,
-        structure: Structure | Any,
+        structure: Structure | type,
         *,
         organization: Callable[[Any], str | None],
         kinds: Iterable[str] | None = None,
@@ -637,8 +643,8 @@ class Service:
         uid = f"rekuest_service:{self.name}:{identifier}"
 
         def on_save(
-            sender: Any,
-            instance: Any,
+            sender: type[Model],
+            instance: Model,
             created: bool = False,
             raw: bool = False,
             **_: Any,
@@ -654,7 +660,7 @@ class Service:
                     lazy=True,
                 )
 
-        def on_delete(sender: Any, instance: Any, **_: Any) -> None:
+        def on_delete(sender: type[Model], instance: Model, **_: Any) -> None:
             self._emit_for(
                 handle, instance, "DELETED", organization, as_deleted, when, lazy=False
             )
@@ -731,7 +737,7 @@ class Service:
             return None
         return config
 
-    def signing_key(self) -> Any:
+    def signing_key(self) -> OKPKey | None:
         """What this service signs with: its own ``key``, else this instance's key."""
         from arkitekt_service.trust import instance_key
 
@@ -755,7 +761,7 @@ class Service:
     def _emit_for(
         self,
         handle: Signal,
-        instance: Any,
+        instance: Model,
         kind: str,
         organization: Callable,
         descriptors: Callable | None,
@@ -809,7 +815,7 @@ class Service:
         self,
         kind: str,
         identifier: str,
-        object: Any,
+        object: object,
         *,
         organization: str | Callable[[], str | None],
         descriptors: dict[str, Any] | Callable[[], dict[str, Any] | None] | None,

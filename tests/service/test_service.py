@@ -5,14 +5,15 @@ from django.db import transaction
 from django.test import Client
 from django.urls import reverse
 from joserfc.jwk import OKPKey
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 from arkitekt_service.service import Service, trust
 from test_project.urls import service
-from tests.service.conftest import as_rekuest
+from tests.service.conftest import Intake, as_rekuest
 
 
 class TestDeclaration:
-    def test_a_service_declares_no_actions_and_knows_no_agent(self):
+    def test_a_service_declares_no_actions_and_knows_no_agent(self) -> None:
         local = Service("plain")
         assert not hasattr(local, "action") and not hasattr(local, "hook_agent")
         assert set(local.manifest()) == {
@@ -25,7 +26,7 @@ class TestDeclaration:
         }
         assert local.manifest()["manifest_version"] == 3
 
-    def test_signal_handles_check_their_kind(self):
+    def test_signal_handles_check_their_kind(self) -> None:
         local = Service("kinds")
         created = local.signal("@kinds/thing", kinds=["CREATED"])
         both = local.signal("@kinds/other", kinds=["CREATED", "DELETED"])
@@ -39,23 +40,25 @@ class TestDeclaration:
         with pytest.raises(ValueError):
             local.signal("@kinds/bad", kinds=["EXPLODED"])
 
-    def test_services_do_not_share_declarations(self):
+    def test_services_do_not_share_declarations(self) -> None:
         a, b = Service("a"), Service("b")
         a.signal("@a/thing")
         assert [s["identifier"] for s in a.manifest()["signals"]] == ["@a/thing"]
         assert b.manifest()["signals"] == []
 
-    def test_the_settings_name_overrides_the_declared_one(self, settings):
+    def test_the_settings_name_overrides_the_declared_one(
+        self, settings: SettingsWrapper
+    ) -> None:
         settings.REKUEST_SERVICE = {**settings.REKUEST_SERVICE, "SERVICE": "testsvc-2"}
         assert Service("testsvc").service_name() == "testsvc-2"
 
-    def test_the_identifier_defaults_to_the_fakts_convention(self):
+    def test_the_identifier_defaults_to_the_fakts_convention(self) -> None:
         assert Service("mikro").identifier == "mikro"
         assert Service("x", identifier="org.example.x").identifier == "org.example.x"
 
 
 class TestManifestEndpoint:
-    def test_the_manifest_is_served_to_rekuest(self):
+    def test_the_manifest_is_served_to_rekuest(self) -> None:
         service.signal(
             "@testsvc/room", kinds=["CREATED"], descriptors=["@testsvc/area"]
         )
@@ -75,11 +78,13 @@ class TestManifestEndpoint:
         ]
         assert manifest["structures"] == []
 
-    def test_only_rekuest_signing_for_this_service_is_let_in(self, settings):
+    def test_only_rekuest_signing_for_this_service_is_let_in(
+        self, settings: SettingsWrapper
+    ) -> None:
         url = reverse("rekuest_service_manifest")
         client = Client()
 
-        def get(headers):
+        def get(headers: dict[str, str]) -> int:
             return client.get(url, headers=headers).status_code
 
         assert get({}) == 401
@@ -108,7 +113,9 @@ class TestManifestEndpoint:
 
 @pytest.mark.django_db(transaction=True)
 class TestSignals:
-    def test_emit_waits_for_the_commit_and_signs_for_the_service(self, intake):
+    def test_emit_waits_for_the_commit_and_signs_for_the_service(
+        self, intake: Intake
+    ) -> None:
         created = service.signal(
             "@testsvc/room", kinds=["CREATED"], descriptors=["@testsvc/area"]
         )
@@ -130,7 +137,7 @@ class TestSignals:
             body["descriptors"] == {"@testsvc/area": 12} and body["provenance"] is None
         )
 
-    def test_a_rolled_back_object_is_never_announced(self, intake):
+    def test_a_rolled_back_object_is_never_announced(self, intake: Intake) -> None:
         created = service.signal("@testsvc/room", kinds=["CREATED"])
         with pytest.raises(RuntimeError):
             with transaction.atomic():
