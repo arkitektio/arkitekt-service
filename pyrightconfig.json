@@ -1,3 +1,10 @@
+// Stricter than the shared standard, and the repo's own, as before the standard:
+// the contract package (what every service's contract.py and image description
+// are written against) is checked in `strict` mode, and on top of that nothing in
+// it may be Any, neither written (reportExplicitAny) nor inferred (reportAny).
+// Those two are per-path rules, so they sit in an execution environment for the
+// contract; extraPaths keeps its imports resolving from the repo, not
+// site-packages (where arkitekt_service ships no py.typed).
 {
   "extends": "./pyright.shared.json",
   "include": [
@@ -13,5 +20,15 @@
   ],
   "strict": [
     "arkitekt_service/contract"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "arkitekt_service/contract",
+      "extraPaths": [
+        "."
+      ],
+      "reportAny": "error",
+      "reportExplicitAny": "error"
+    }
   ]
 }
