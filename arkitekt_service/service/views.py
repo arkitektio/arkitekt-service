@@ -37,12 +37,23 @@ def manifest(service: Service, request: HttpRequest) -> HttpResponse:
     if request.method != "GET":
         return HttpResponse(status=405)
     try:
-        verified = trust.verify("GET", request.path, request.body, request.headers.get("Authorization"), audience=service.signing_identifier(), max_skew=int(config.get("MAX_SKEW", 30)))
+        verified = trust.verify(
+            "GET",
+            request.path,
+            request.body,
+            request.headers.get("Authorization"),
+            audience=service.signing_identifier(),
+            max_skew=int(config.get("MAX_SKEW", 30)),
+        )
     except trust.TrustError as error:
         logger.info("Refused a request to %s: %s", request.path, error)
         return JsonResponse({"error": "Invalid signature"}, status=401)
     if verified.issuer != service.rekuest_identifier():
-        logger.info("Refused a request to %s from %s: only rekuest may call it", request.path, verified.issuer)
+        logger.info(
+            "Refused a request to %s from %s: only rekuest may call it",
+            request.path,
+            verified.issuer,
+        )
         return JsonResponse({"error": "Invalid signature"}, status=401)
     return JsonResponse(service.manifest())
 
@@ -91,7 +102,9 @@ def answers_challenge(view: Any) -> Any:
     if iscoroutinefunction(view):
 
         @functools.wraps(view)
-        async def async_wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        async def async_wrapped(
+            request: HttpRequest, *args: Any, **kwargs: Any
+        ) -> HttpResponse:
             return _challenge_answer(request, await view(request, *args, **kwargs))
 
         markcoroutinefunction(async_wrapped)
@@ -117,4 +130,10 @@ def urlpatterns_for(service: Service) -> list:
     def manifest_view(request: HttpRequest) -> HttpResponse:
         return manifest(service, request)
 
-    return [path(_prefixed("_rekuest/service/manifest"), manifest_view, name="rekuest_service_manifest")]
+    return [
+        path(
+            _prefixed("_rekuest/service/manifest"),
+            manifest_view,
+            name="rekuest_service_manifest",
+        )
+    ]

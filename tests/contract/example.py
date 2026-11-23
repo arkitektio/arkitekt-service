@@ -5,9 +5,25 @@ from __future__ import annotations
 import os
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Needs, Offers, Refused, Role, Scope, Start
+from arkitekt_service.contract import (
+    JSON,
+    Contract,
+    Description,
+    Facts,
+    Needs,
+    Offers,
+    Refused,
+    Role,
+    Scope,
+    Start,
+)
 
 
 class Django(BaseModel):
@@ -45,7 +61,14 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (init_settings, env_settings, YamlConfigSettingsSource(settings_cls, yaml_file=os.environ.get("ARKITEKT_CONFIG_FILE", "config.yaml")))
+        return (
+            init_settings,
+            env_settings,
+            YamlConfigSettingsSource(
+                settings_cls,
+                yaml_file=os.environ.get("ARKITEKT_CONFIG_FILE", "config.yaml"),
+            ),
+        )
 
 
 def render(facts: Facts) -> dict[str, JSON]:
@@ -53,12 +76,22 @@ def render(facts: Facts) -> dict[str, JSON]:
     if database is None:
         raise Refused("it needs a database, and this hub gives it none")
     document: dict[str, JSON] = {
-        "django": {"secret_key": facts.me.secret_key, "debug": facts.me.debug, "force_script_name": facts.me.path},
-        "postgres": {"host": database.host, "db_name": database.name, "password": database.password},
+        "django": {
+            "secret_key": facts.me.secret_key,
+            "debug": facts.me.debug,
+            "force_script_name": facts.me.path,
+        },
+        "postgres": {
+            "host": database.host,
+            "db_name": database.name,
+            "password": database.password,
+        },
     }
     agents = facts.offering("agent")
     if agents:
-        document["rekuest_hook"] = {"rekuest_url": next(iter(agents.values())).offers["agent"]}
+        document["rekuest_hook"] = {
+            "rekuest_url": next(iter(agents.values())).offers["agent"]
+        }
     return document
 
 
@@ -72,11 +105,23 @@ contract = Contract(
             peers=["rekuest"],
             scopes=[
                 Scope(key="example_read", description="See the examples you made."),
-                Scope(key="example_all", description="Do everything with examples on your behalf.", is_all_scope=True),
+                Scope(
+                    key="example_all",
+                    description="Do everything with examples on your behalf.",
+                    is_all_scope=True,
+                ),
             ],
             roles=[
-                Role(key="example_admin", description="Full control of examples in this organization.", is_admin_role=True),
-                Role(key="example_editor", description="Make and change examples.", is_default_role=True),
+                Role(
+                    key="example_admin",
+                    description="Full control of examples in this organization.",
+                    is_admin_role=True,
+                ),
+                Role(
+                    key="example_editor",
+                    description="Make and change examples.",
+                    is_default_role=True,
+                ),
             ],
         ),
         offers=Offers(endpoints={"rekuest_hook": "_rekuest/hook"}),
@@ -86,5 +131,7 @@ contract = Contract(
     settings=Settings,
     render=render,
     serve=Start(("daphne", "-b", "0.0.0.0", "-p", "80", "example.asgi:application")),
-    debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80"), {"EXAMPLE_DEBUG": "1"}),
+    debug=Start(
+        ("python", "manage.py", "runserver", "0.0.0.0:80"), {"EXAMPLE_DEBUG": "1"}
+    ),
 )

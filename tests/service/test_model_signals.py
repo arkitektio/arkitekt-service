@@ -43,8 +43,16 @@ class TestModelSignals:
 
         bodies = _bodies(intake, 3)
         assert [b["kind"] for b in bodies] == ["CREATED", "UPDATED", "DELETED"]
-        assert all(b["identifier"] == "@things/thing" and b["object"] == str(pk) and b["organization"] == "org" for b in bodies)
-        assert all(r["path"] == "/agi/signal/things" and r["issuer"] == "things" for r in intake.received)
+        assert all(
+            b["identifier"] == "@things/thing"
+            and b["object"] == str(pk)
+            and b["organization"] == "org"
+            for b in bodies
+        )
+        assert all(
+            r["path"] == "/agi/signal/things" and r["issuer"] == "things"
+            for r in intake.received
+        )
 
     def test_the_signal_carries_what_the_structure_describes(self, intake):
         with transaction.atomic():
@@ -63,7 +71,10 @@ class TestModelSignals:
         assert things.restore(made) == 1
         assert things.restore(made) == 0  # nothing changed, nothing announced
         bodies = _bodies(intake, 2)
-        assert [(b["kind"], b["descriptors"]) for b in bodies] == [("CREATED", {"@things/n_parts": 0}), ("UPDATED", {"@things/n_parts": 1})]
+        assert [(b["kind"], b["descriptors"]) for b in bodies] == [
+            ("CREATED", {"@things/n_parts": 0}),
+            ("UPDATED", {"@things/n_parts": 1}),
+        ]
         assert _bodies(intake, 3, timeout=0.5) == bodies
 
     def test_a_rolled_back_save_sends_nothing(self, intake):
@@ -79,8 +90,12 @@ class TestModelSignals:
 
     def test_a_failing_description_never_breaks_the_save(self, intake):
         broken = Service("broken", key=settings.BROKEN_KEY)
-        broken.model_signal(broken.structure(Part, "@things/part"), organization=lambda part: 1 / 0)
-        Part.objects.create(thing=Thing.objects.create(name="host", secret=True))  # the save succeeds
+        broken.model_signal(
+            broken.structure(Part, "@things/part"), organization=lambda part: 1 / 0
+        )
+        Part.objects.create(
+            thing=Thing.objects.create(name="host", secret=True)
+        )  # the save succeeds
         assert _bodies(intake, 1, timeout=0.5) == []
 
     def test_fixture_loading_is_not_an_event(self, intake):
@@ -106,14 +121,21 @@ class TestDeclaration:
     def test_the_model_may_stand_for_its_structure(self):
         local = Service("local")
         hosted = local.structure(Part, "@local/part")
-        assert local.model_signal(Part, organization=lambda part: "org", kinds=["CREATED"]).identifier == hosted.identifier
+        assert (
+            local.model_signal(
+                Part, organization=lambda part: "org", kinds=["CREATED"]
+            ).identifier
+            == hosted.identifier
+        )
 
     def test_only_a_hosted_structure_can_be_signalled(self):
         local = Service("local")
         with pytest.raises(ValueError, match="not a structure this service hosts"):
             local.model_signal(Part, organization=lambda part: "org")
         with pytest.raises(ValueError, match="not a structure this service hosts"):
-            local.model_signal(thing, organization=lambda part: "org")  # another service's
+            local.model_signal(
+                thing, organization=lambda part: "org"
+            )  # another service's
 
 
 def test_organization_of_follows_a_path_to_the_identifier():
@@ -121,6 +143,8 @@ def test_organization_of_follows_a_path_to_the_identifier():
 
     from arkitekt_service.service import organization_of
 
-    message = SimpleNamespace(room=SimpleNamespace(organization=SimpleNamespace(identifier="lok#lab")))
+    message = SimpleNamespace(
+        room=SimpleNamespace(organization=SimpleNamespace(identifier="lok#lab"))
+    )
     assert organization_of("room.organization")(message) == "lok#lab"
     assert organization_of("room.organization")(SimpleNamespace(room=None)) is None

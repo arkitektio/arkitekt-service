@@ -88,23 +88,32 @@ class _Bundle:
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/.well-known/hub-keys/1"
+        self.url = (
+            f"http://127.0.0.1:{self.server.server_address[1]}/.well-known/hub-keys/1"
+        )
 
 
 def test_a_fetched_bundle_is_cached_and_refetched_for_a_new_key(settings, monkeypatch):
     old, new = OKPKey.generate_key("Ed25519"), OKPKey.generate_key("Ed25519")
     bundle = _Bundle([{**trust.public_jwk(old), "service": "mikro"}])
-    settings.INSTANCE = {"PRIVATE_KEY": settings.INSTANCE["PRIVATE_KEY"], "TRUST_JWKS_URI": bundle.url}
+    settings.INSTANCE = {
+        "PRIVATE_KEY": settings.INSTANCE["PRIVATE_KEY"],
+        "TRUST_JWKS_URI": bundle.url,
+    }
     monkeypatch.setattr(trust, "REFETCH_MIN_SECONDS", 0)
     try:
-        signed_old = trust.sign("POST", "/p", b"x", issuer="mikro", audience="rekuest", key=old)
+        signed_old = trust.sign(
+            "POST", "/p", b"x", issuer="mikro", audience="rekuest", key=old
+        )
         assert _verify(signed_old).issuer == "mikro"
         assert _verify(signed_old).issuer == "mikro"
         assert bundle.hits == 1  # cached
 
         # mikro was re-enrolled with a new key: an unknown kid triggers one refetch.
         bundle.jwks = {"keys": [{**trust.public_jwk(new), "service": "mikro"}]}
-        signed_new = trust.sign("POST", "/p", b"x", issuer="mikro", audience="rekuest", key=new)
+        signed_new = trust.sign(
+            "POST", "/p", b"x", issuer="mikro", audience="rekuest", key=new
+        )
         assert _verify(signed_new).issuer == "mikro"
         assert bundle.hits == 2
     finally:
@@ -124,7 +133,9 @@ def test_a_token_carries_the_hub_it_was_signed_in(settings):
 def test_a_service_of_another_hub_with_the_same_name_is_refused(settings):
     """Names are unique only within a hub: the hub is what tells two `mikro`s apart."""
     settings.AUTHENTIKATE = {"hub": HUB}
-    elsewhere = trust.sign("POST", "/p", b"x", issuer=ME, audience="rekuest", hub=OTHER_HUB)
+    elsewhere = trust.sign(
+        "POST", "/p", b"x", issuer=ME, audience="rekuest", hub=OTHER_HUB
+    )
     with pytest.raises(trust.TrustError, match="not this hub"):
         _verify(elsewhere)
 

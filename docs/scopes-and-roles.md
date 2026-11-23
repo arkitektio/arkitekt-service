@@ -15,14 +15,35 @@ A service declares both in its contract, as its own (`Needs(scopes=..., roles=..
 
 ```python
 SCOPES = [
-    Scope(key="mikro_read", description="See images, datasets, scenes, lenses, tables, annotations and their files."),
-    Scope(key="mikro_write", description="Upload and change images, datasets, scenes, lenses, charts, layers, folders, transformations and metrics."),
-    Scope(key="mikro_all", description="Do everything in Mikro on your behalf.", is_all_scope=True),
+    Scope(
+        key="mikro_read",
+        description="See images, datasets, scenes, lenses, tables, annotations and their files.",
+    ),
+    Scope(
+        key="mikro_write",
+        description="Upload and change images, datasets, scenes, lenses, charts, layers, folders, transformations and metrics.",
+    ),
+    Scope(
+        key="mikro_all",
+        description="Do everything in Mikro on your behalf.",
+        is_all_scope=True,
+    ),
 ]
 ROLES = [
-    Role(key="mikro_admin", description="Full control of Mikro in this organization.", is_admin_role=True),
-    Role(key="mikro_editor", description="Upload and change images and datasets, and share them.", is_default_role=True),
-    Role(key="mikro_annotator", description="Annotate images, also as a guest in a collaboration."),
+    Role(
+        key="mikro_admin",
+        description="Full control of Mikro in this organization.",
+        is_admin_role=True,
+    ),
+    Role(
+        key="mikro_editor",
+        description="Upload and change images and datasets, and share them.",
+        is_default_role=True,
+    ),
+    Role(
+        key="mikro_annotator",
+        description="Annotate images, also as a guest in a collaboration.",
+    ),
 ]
 ```
 
@@ -49,7 +70,9 @@ Every root field of the schema says which scope an app needs for it, and a write
 member needs:
 
 ```python
-strawberry_django.mutation(extensions=[AuthExtension(scopes=["mikro_write"], any_role_of=["mikro_editor"])])
+strawberry_django.mutation(
+    extensions=[AuthExtension(scopes=["mikro_write"], any_role_of=["mikro_editor"])]
+)
 ```
 
 Name the specific scope and role, never the catch-alls: `annotate_schema` tells authentikate which

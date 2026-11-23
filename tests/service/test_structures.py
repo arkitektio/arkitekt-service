@@ -10,11 +10,18 @@ hosting = Service("hosting", key=settings.THINGS_KEY)
 shelf = hosting.structure(
     Shelf,
     "@hosting/shelf",
-    descriptors=[Descriptor("@hosting/n_books", "INT", "How many books the shelf holds")],
+    descriptors=[
+        Descriptor("@hosting/n_books", "INT", "How many books the shelf holds")
+    ],
     describe=lambda shelf: {"@hosting/n_books": shelf.books.count()},
     description="A shelf of books.",
 )
-book = hosting.structure(Book, "@hosting/book", descriptors=["@hosting/on"], describe=lambda book: {"@hosting/on": book.shelf.name})
+book = hosting.structure(
+    Book,
+    "@hosting/book",
+    descriptors=["@hosting/on"],
+    describe=lambda book: {"@hosting/on": book.shelf.name},
+)
 
 
 class TestDeclaration:
@@ -25,9 +32,22 @@ class TestDeclaration:
                 "identifier": "@hosting/shelf",
                 "label": "Shelf",
                 "description": "A shelf of books.",
-                "descriptors": [{"key": "@hosting/n_books", "type": "INT", "description": "How many books the shelf holds"}],
+                "descriptors": [
+                    {
+                        "key": "@hosting/n_books",
+                        "type": "INT",
+                        "description": "How many books the shelf holds",
+                    }
+                ],
             },
-            {"identifier": "@hosting/book", "label": "Book", "description": None, "descriptors": [{"key": "@hosting/on", "type": "ANY", "description": None}]},
+            {
+                "identifier": "@hosting/book",
+                "label": "Book",
+                "description": None,
+                "descriptors": [
+                    {"key": "@hosting/on", "type": "ANY", "description": None}
+                ],
+            },
         ]
 
     def test_hosting_declares_no_signal(self):
@@ -74,7 +94,9 @@ class TestDescribing:
         # The shelf was saved before its book: what counts the book is restored by its writer.
         assert hosting.describe(made.shelf) == {"@hosting/n_books": 0}
         hosting.restore(made.shelf)
-        assert hosting.describe(Shelf.objects.get(pk=made.shelf.pk)) == {"@hosting/n_books": 1}
+        assert hosting.describe(Shelf.objects.get(pk=made.shelf.pk)) == {
+            "@hosting/n_books": 1
+        }
         assert intake.wait(1, timeout=0.5) == []
 
     def test_a_model_nobody_hosts_has_no_descriptors(self):

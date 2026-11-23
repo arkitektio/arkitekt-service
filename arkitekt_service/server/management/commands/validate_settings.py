@@ -54,7 +54,10 @@ def lines(data: object, *, indent: int = 1, secret: bool = False) -> list[str]:
         out = []
         for index, item in enumerate(data):  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
             if isinstance(item, (dict, list)):
-                out += [f"{pad}- item {index}:", *lines(item, indent=indent + 1, secret=secret)]
+                out += [
+                    f"{pad}- item {index}:",
+                    *lines(item, indent=indent + 1, secret=secret),
+                ]
             else:
                 out.append(f"{pad}- {masked(item) if secret else repr(item)}")
         return out
@@ -69,7 +72,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: CommandParser) -> None:
         """``--strict``: a key that is not read as written fails the command."""
-        parser.add_argument("--strict", action="store_true", help="Also fail on keys this release does not read as written.")
+        parser.add_argument(
+            "--strict",
+            action="store_true",
+            help="Also fail on keys this release does not read as written.",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         declared = contract.load().settings
@@ -77,9 +84,13 @@ class Command(BaseCommand):
         try:
             settings = declared()
         except ValidationError as error:
-            self.stderr.write(self.style.ERROR(f"Invalid configuration (source: {path})"))
+            self.stderr.write(
+                self.style.ERROR(f"Invalid configuration (source: {path})")
+            )
             for problem in error.errors():
-                self.stderr.write(f"  {'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}")
+                self.stderr.write(
+                    f"  {'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}"
+                )
             raise SystemExit(1) from None
 
         self.stdout.write(self.style.SUCCESS(f"Configuration valid (source: {path})"))
@@ -92,5 +103,7 @@ class Command(BaseCommand):
         for key, now in found.renamed:
             self.stdout.write(self.style.WARNING(f"renamed: {key} is now {now}"))
         if found.unknown and options["strict"]:
-            self.stderr.write(self.style.ERROR(f"{path} sets keys this release does not read"))
+            self.stderr.write(
+                self.style.ERROR(f"{path} sets keys this release does not read")
+            )
             raise SystemExit(NOT_READ)

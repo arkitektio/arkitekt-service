@@ -6,6 +6,7 @@ would publish them.
 """
 
 from joserfc.jwk import OKPKey
+
 from arkitekt_service.trust import public_jwk
 
 SECRET_KEY = "rekuest-hook-tests"
@@ -25,7 +26,10 @@ TRUST_JWKS = {
         {**public_jwk(REKUEST_KEY), "service": "rekuest"},
     ]
 }
-INSTANCE = {"PRIVATE_KEY": INSTANCE_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}
+INSTANCE = {
+    "PRIVATE_KEY": INSTANCE_KEY.as_pem(private=True).decode(),
+    "TRUST_JWKS": TRUST_JWKS,
+}
 
 # Tests point REKUEST_URL at a local HTTP server standing in for rekuest's intake.
 REKUEST_HOOK = {"REKUEST_URL": "http://127.0.0.1:9", "MAX_SKEW": 30}

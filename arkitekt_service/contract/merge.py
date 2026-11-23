@@ -10,5 +10,9 @@ def merge(base: dict[str, JSON], over: dict[str, JSON]) -> dict[str, JSON]:
     merged = dict(base)
     for key, value in over.items():
         existing = merged.get(key)
-        merged[key] = merge(existing, value) if isinstance(existing, dict) and isinstance(value, dict) else value
+        merged[key] = (
+            merge(existing, value)
+            if isinstance(existing, dict) and isinstance(value, dict)
+            else value
+        )
     return merged

@@ -9,10 +9,16 @@ from django.conf import settings
 from django.db import connection, transaction
 
 from arkitekt_service import trust
-from arkitekt_service.feed.api import Change, Cursor, NotInTransaction, changes, record_change, record_changes
+from arkitekt_service.feed.api import (
+    Change,
+    Cursor,
+    NotInTransaction,
+    changes,
+    record_change,
+    record_changes,
+)
 from arkitekt_service.feed.consumer import Ended, Poison, apply_pages, resume
 from arkitekt_service.feed.models import FeedCursor, FeedEntry, FeedState
-from arkitekt_service.feed.reader import FeedReader
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -78,7 +84,9 @@ class TestOrder:
             record_change(created("r"))
 
         held = changes(METRIC, "lab")
-        assert held.entries == [] and held.horizon <= max(FeedEntry.objects.values_list("xid", flat=True))
+        assert held.entries == [] and held.horizon <= max(
+            FeedEntry.objects.values_list("xid", flat=True)
+        )
 
         t_may_commit.set()
         thread.join(10)
@@ -123,8 +131,13 @@ class TestOrder:
             record_changes([created(str(i)) for i in range(5)])
         first = changes(METRIC, "lab", limit=2)
         second = changes(METRIC, "lab", first.entries[-1].cursor, limit=10)
-        assert [e.object for e in first.entries + second.entries] == ["0", "1", "2", "3", "4"]
-
+        assert [e.object for e in first.entries + second.entries] == [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+        ]
 
     def test_a_page_never_ends_inside_a_transaction(self):
         """A full page is extended by the rest of its last transaction: a reader sees each one whole."""
@@ -134,21 +147,35 @@ class TestOrder:
             record_change(created("next"))
         first = changes(METRIC, "lab", limit=1000)
         assert len(first.entries) == 2500 and len({e.xid for e in first.entries}) == 1
-        assert [e.object for e in changes(METRIC, "lab", first.entries[-1].cursor, limit=1000).entries] == ["next"]
+        assert [
+            e.object
+            for e in changes(
+                METRIC, "lab", first.entries[-1].cursor, limit=1000
+            ).entries
+        ] == ["next"]
 
 
 class TestPublishing:
-    def post(self, live_server, body: bytes, key=None, issuer="kraph") -> httpx.Response:
+    def post(
+        self, live_server, body: bytes, key=None, issuer="kraph"
+    ) -> httpx.Response:
         url = f"{live_server.url}/_feed"
         headers = {"Content-Type": "application/json"}
         if key is not None:
-            headers["Authorization"] = trust.sign("POST", "/_feed", body, issuer=issuer, audience="mikro", key=key)
+            headers["Authorization"] = trust.sign(
+                "POST", "/_feed", body, issuer=issuer, audience="mikro", key=key
+            )
         return httpx.post(url, content=body, headers=headers)
 
     def test_only_a_named_reader_reads(self, live_server):
         body = b'{"feed": "@mikro/metric", "organization": "lab", "after": {"xid": "0", "id": 0}, "limit": 10}'
         assert self.post(live_server, body).status_code == 401
-        assert self.post(live_server, body, key=settings.STRANGER_KEY, issuer="stranger").status_code == 403
+        assert (
+            self.post(
+                live_server, body, key=settings.STRANGER_KEY, issuer="stranger"
+            ).status_code
+            == 403
+        )
         assert self.post(live_server, body, key=settings.READER_KEY).status_code == 200
 
     def test_a_page_carries_what_the_producer_rendered(self, reader):
@@ -156,7 +183,11 @@ class TestPublishing:
             record_change(created("8812"))
         page = reader.page("lab", Cursor())
         (entry,) = page.entries
-        assert (entry.object, entry.kind, entry.body) == ("8812", "CREATED", {"seen": "8812"})
+        assert (entry.object, entry.kind, entry.body) == (
+            "8812",
+            "CREATED",
+            {"seen": "8812"},
+        )
         assert page.epoch.endswith(str(FeedState.objects.get(feed=METRIC).token))
 
 
@@ -169,12 +200,20 @@ def collect(into: list):
 
 class TestConsuming:
     def test_everything_is_applied_once_and_the_cursor_follows(self, reader):
-        for batch in (range(0, 10), range(10, 20), range(20, 25)):  # three transactions, a page each
+        for batch in (
+            range(0, 10),
+            range(10, 20),
+            range(20, 25),
+        ):  # three transactions, a page each
             with transaction.atomic():
                 record_changes([created(str(i)) for i in batch])
         applied: list[str] = []
         outcome = apply_pages(reader, "lab", collect(applied), limit=10)
-        assert outcome.ended == Ended.CAUGHT_UP and outcome.applied == 25 and outcome.pages == 3
+        assert (
+            outcome.ended == Ended.CAUGHT_UP
+            and outcome.applied == 25
+            and outcome.pages == 3
+        )
         assert applied == [str(i) for i in range(25)]
 
         again: list[str] = []
@@ -187,14 +226,20 @@ class TestConsuming:
 
         def hold():
             with transaction.atomic(), connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ["arkitekt-feed:mikro:@mikro/metric:lab"])
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    ["arkitekt-feed:mikro:@mikro/metric:lab"],
+                )
                 holding.set()
                 release.wait(10)
 
         thread, errors = in_thread(hold)
         assert holding.wait(10)
         applied: list[str] = []
-        assert apply_pages(reader, "lab", collect(applied)).ended == Ended.BUSY and applied == []
+        assert (
+            apply_pages(reader, "lab", collect(applied)).ended == Ended.BUSY
+            and applied == []
+        )
         release.set()
         thread.join(10)
         assert not errors and apply_pages(reader, "lab", collect(applied)).applied == 1
@@ -204,18 +249,27 @@ class TestConsuming:
             record_changes([created("good"), created("bad")])
 
         def apply(entries):
-            FeedEntry.objects.filter(object="good").update(object="was-applied")  # rolled back with the page
+            FeedEntry.objects.filter(object="good").update(
+                object="was-applied"
+            )  # rolled back with the page
             raise Poison("no such unit")
 
         outcome = apply_pages(reader, "lab", apply)
         assert outcome.ended == Ended.HALTED and "no such unit" in outcome.halted
         row = FeedCursor.objects.get(organization="lab")
-        assert (row.xid, row.entry) == (0, 0) and FeedEntry.objects.filter(object="good").exists()
+        assert (row.xid, row.entry) == (0, 0) and FeedEntry.objects.filter(
+            object="good"
+        ).exists()
 
         applied: list[str] = []
-        assert apply_pages(reader, "lab", collect(applied)).ended == Ended.HALTED and applied == []
+        assert (
+            apply_pages(reader, "lab", collect(applied)).ended == Ended.HALTED
+            and applied == []
+        )
         resume("mikro", METRIC, "lab")
-        assert apply_pages(reader, "lab", collect(applied)).ended == Ended.CAUGHT_UP and applied == ["good", "bad"]
+        assert apply_pages(
+            reader, "lab", collect(applied)
+        ).ended == Ended.CAUGHT_UP and applied == ["good", "bad"]
 
     def test_any_other_error_fails_the_run_and_the_next_run_retries(self, reader):
         with transaction.atomic():
@@ -234,7 +288,9 @@ class TestConsuming:
         with transaction.atomic():
             record_change(created("1"))
         apply_pages(reader, "lab", collect([]))
-        FeedState.objects.filter(feed=METRIC).update(token=uuid.uuid4())  # another history
+        FeedState.objects.filter(feed=METRIC).update(
+            token=uuid.uuid4()
+        )  # another history
 
         with transaction.atomic():
             record_change(created("2"))
@@ -243,7 +299,9 @@ class TestConsuming:
 
     def test_a_counter_that_went_back_halts_the_reader(self, reader):
         apply_pages(reader, "lab", collect([]))
-        FeedCursor.objects.filter(organization="lab").update(xid=2**62)  # a cursor from a cluster that had gone further
+        FeedCursor.objects.filter(organization="lab").update(
+            xid=2**62
+        )  # a cursor from a cluster that had gone further
         outcome = apply_pages(reader, "lab", collect([]))
         assert outcome.ended == Ended.HALTED and "went back" in outcome.halted
 

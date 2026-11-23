@@ -20,7 +20,10 @@ def verifies(nonce: str, signature: str) -> bool:
     pinned = trust.raw_public_key_b64(django_settings.SERVICE_KEY)
     public = Ed25519PublicKey.from_public_bytes(base64.b64decode(pinned, validate=True))
     try:
-        public.verify(base64.b64decode(signature, validate=True), f"fakts-challenge-v1:{nonce}".encode())
+        public.verify(
+            base64.b64decode(signature, validate=True),
+            f"fakts-challenge-v1:{nonce}".encode(),
+        )
     except InvalidSignature:
         return False
     return True
@@ -64,7 +67,12 @@ def test_a_release_names_itself_in_every_health_answer(monkeypatch):
     assert "Arkitekt-Service-Version" not in healthy(RequestFactory().get("/ht"))
     monkeypatch.setenv("ARKITEKT_SERVICE_VERSION", "12.1.0")
     assert healthy(RequestFactory().get("/ht"))["Arkitekt-Service-Version"] == "12.1.0"
-    assert healthy(RequestFactory().get("/ht", {"nonce": "n-1"}))["Arkitekt-Service-Version"] == "12.1.0"
+    assert (
+        healthy(RequestFactory().get("/ht", {"nonce": "n-1"}))[
+            "Arkitekt-Service-Version"
+        ]
+        == "12.1.0"
+    )
 
 
 def test_an_unhealthy_service_does_not_sign():
@@ -74,7 +82,9 @@ def test_an_unhealthy_service_does_not_sign():
 
 def test_without_an_instance_key_the_health_answer_is_untouched(settings):
     settings.INSTANCE = None
-    assert body(healthy(RequestFactory().get("/ht", {"nonce": "n-1"}))) == {"Database": "working"}
+    assert body(healthy(RequestFactory().get("/ht", {"nonce": "n-1"}))) == {
+        "Database": "working"
+    }
 
 
 @pytest.mark.parametrize("nonce", ["", "x" * 257])
@@ -85,5 +95,7 @@ def test_only_a_nonce_is_signed(nonce):
 def test_an_async_health_view_is_wrapped_as_async():
     import asyncio
 
-    response = asyncio.run(async_healthy(AsyncRequestFactory().get("/ht", {"nonce": "n-1"})))
+    response = asyncio.run(
+        async_healthy(AsyncRequestFactory().get("/ht", {"nonce": "n-1"}))
+    )
     assert verifies("n-1", body(response)["signature"])

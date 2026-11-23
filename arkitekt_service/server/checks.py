@@ -18,7 +18,9 @@ from arkitekt_service.server.settings import written
 
 
 @register()
-def check_unread_configuration(app_configs: Sequence[AppConfig] | None, **kwargs: object) -> list[CheckMessage]:
+def check_unread_configuration(
+    app_configs: Sequence[AppConfig] | None, **kwargs: object
+) -> list[CheckMessage]:
     """``arkitekt.W001``: a key no setting claims. ``arkitekt.W002``: a key read under a former name."""
     try:
         settings = contract.load().settings
@@ -26,13 +28,29 @@ def check_unread_configuration(app_configs: Sequence[AppConfig] | None, **kwargs
         return []  # not a service with a contract: nothing to judge the file against
     found = unread(settings, written())
     return [
-        *(Warning(f"The configuration sets `{key}`, which this release does not read.", hint="A misspelling, or a key of another release.", id="arkitekt.W001") for key in found.unknown),
-        *(Warning(f"The configuration sets `{key}`, which is now `{now}`.", hint="Still read under its former name, for now.", id="arkitekt.W002") for key, now in found.renamed),
+        *(
+            Warning(
+                f"The configuration sets `{key}`, which this release does not read.",
+                hint="A misspelling, or a key of another release.",
+                id="arkitekt.W001",
+            )
+            for key in found.unknown
+        ),
+        *(
+            Warning(
+                f"The configuration sets `{key}`, which is now `{now}`.",
+                hint="Still read under its former name, for now.",
+                id="arkitekt.W002",
+            )
+            for key, now in found.renamed
+        ),
     ]
 
 
 @register()
-def check_guests(app_configs: Sequence[AppConfig] | None, **kwargs: object) -> list[CheckMessage]:
+def check_guests(
+    app_configs: Sequence[AppConfig] | None, **kwargs: object
+) -> list[CheckMessage]:
     """``arkitekt.W011``: guests are let in, and the audience names no instance their collaborations are read for."""
     from arkitekt_service.service.service import Service
 

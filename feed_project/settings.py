@@ -13,7 +13,11 @@ from arkitekt_service.trust import public_jwk
 SECRET_KEY = "arkitekt-feed-tests"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
-INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "arkitekt_service.feed"]
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "arkitekt_service.feed",
+]
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -41,4 +45,7 @@ TRUST_JWKS = {
         {**public_jwk(STRANGER_KEY), "service": "stranger"},
     ]
 }
-INSTANCE = {"PRIVATE_KEY": PRODUCER_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}
+INSTANCE = {
+    "PRIVATE_KEY": PRODUCER_KEY.as_pem(private=True).decode(),
+    "TRUST_JWKS": TRUST_JWKS,
+}

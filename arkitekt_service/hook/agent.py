@@ -56,7 +56,13 @@ class StructurePort:
     nullable: bool = False
 
     def manifest(self) -> dict[str, Any]:
-        return {"key": self.key, "kind": "STRUCTURE", "identifier": self.identifier, "nullable": self.nullable, "description": self.description}
+        return {
+            "key": self.key,
+            "kind": "STRUCTURE",
+            "identifier": self.identifier,
+            "nullable": self.nullable,
+            "description": self.description,
+        }
 
 
 @dataclass(frozen=True)
@@ -81,9 +87,16 @@ class Action:
         return ORGANIZATION in inspect.signature(self.function).parameters
 
     def manifest(self) -> dict[str, Any]:
-        return {"interface": self.interface, "name": self.name, "description": self.description, "args": [port.manifest() for port in self.args]}
+        return {
+            "interface": self.interface,
+            "name": self.name,
+            "description": self.description,
+            "args": [port.manifest() for port in self.args],
+        }
 
-    def arguments(self, given: dict[str, Any], organization: str | None) -> dict[str, Any]:
+    def arguments(
+        self, given: dict[str, Any], organization: str | None
+    ) -> dict[str, Any]:
         """What the function is called with: each port's object as a :class:`StructureRef`, and the organization.
 
         Only declared ports are passed on. A left-out nullable port is None; a left-out required
@@ -95,12 +108,22 @@ class Action:
             value = given.get(port.key)
             if value is None:
                 if not port.nullable:
-                    raise ValueError(f"The action {self.interface!r} needs {port.key!r}, a {port.identifier}")
+                    raise ValueError(
+                        f"The action {self.interface!r} needs {port.key!r}, a {port.identifier}"
+                    )
                 arguments[port.key] = None
                 continue
-            if not isinstance(value, dict) or value.get("__identifier") != port.identifier or value.get("object") is None:
-                raise ValueError(f"{port.key!r} of {self.interface!r} takes a {port.identifier}, not {value!r}")
-            arguments[port.key] = StructureRef(identifier=port.identifier, object=str(value["object"]))
+            if (
+                not isinstance(value, dict)
+                or value.get("__identifier") != port.identifier
+                or value.get("object") is None
+            ):
+                raise ValueError(
+                    f"{port.key!r} of {self.interface!r} takes a {port.identifier}, not {value!r}"
+                )
+            arguments[port.key] = StructureRef(
+                identifier=port.identifier, object=str(value["object"])
+            )
         if self.takes_organization:
             arguments[ORGANIZATION] = organization
         return arguments
@@ -115,7 +138,9 @@ def _docstring_parts(function: Callable[..., Any]) -> tuple[str | None, str | No
     return first.strip() or None, rest.strip() or None
 
 
-def _check_ports(interface: str, function: Callable[..., Any], ports: Sequence[StructurePort]) -> None:
+def _check_ports(
+    interface: str, function: Callable[..., Any], ports: Sequence[StructurePort]
+) -> None:
     """Every port is a parameter of ``function``, named once, and none is ``organization``."""
     parameters = inspect.signature(function).parameters
     keys = [port.key for port in ports]
@@ -123,15 +148,26 @@ def _check_ports(interface: str, function: Callable[..., Any], ports: Sequence[S
         raise ValueError(f"The action {interface!r} declares a port twice: {keys}")
     for key in keys:
         if key == ORGANIZATION:
-            raise ValueError(f"The action {interface!r} cannot take {ORGANIZATION!r} as a port: the agent fills it in")
+            raise ValueError(
+                f"The action {interface!r} cannot take {ORGANIZATION!r} as a port: the agent fills it in"
+            )
         if key not in parameters:
-            raise ValueError(f"The action {interface!r} declares the port {key!r}, which its function does not take")
+            raise ValueError(
+                f"The action {interface!r} declares the port {key!r}, which its function does not take"
+            )
 
 
 class HookAgent:
     """An agent reached over HTTP: its name, its signing identity and its actions."""
 
-    def __init__(self, name: str, *, identifier: str | None = None, description: str | None = None, key: Any = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        identifier: str | None = None,
+        description: str | None = None,
+        key: Any = None,
+    ) -> None:
         self.name = name
         #: The key this agent signs with; None (the rule) = this instance's key
         #: (``settings.INSTANCE``). Set when one process plays several instances (tests).
@@ -168,7 +204,13 @@ class HookAgent:
             key = interface or target.__name__
             _check_ports(key, target, args)
             doc_name, doc_description = _docstring_parts(target)
-            declared = Action(key, target, name or doc_name or key, description if description is not None else doc_description, tuple(args))
+            declared = Action(
+                key,
+                target,
+                name or doc_name or key,
+                description if description is not None else doc_description,
+                tuple(args),
+            )
             existing = self._actions.get(key)
             if existing is not None and existing.function is not target:
                 raise ValueError(f"The action {key!r} is registered twice")

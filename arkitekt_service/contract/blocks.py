@@ -23,7 +23,13 @@ def django(facts: Facts) -> dict[str, JSON]:
     """``django``: the server's own settings."""
     admin = facts.me.admin
     return {
-        "admin": {"username": admin.username, "password": admin.password, "email": admin.email} if admin else None,
+        "admin": {
+            "username": admin.username,
+            "password": admin.password,
+            "email": admin.email,
+        }
+        if admin
+        else None,
         "csrf_trusted_origins": [*facts.hub.origins],
         "debug": facts.me.debug,
         "force_script_name": facts.me.path,
@@ -36,8 +42,16 @@ def postgres(facts: Facts, name: str = MAIN_DATABASE) -> dict[str, JSON]:
     """``postgres``: one of the service's databases, by the name it asked for it under."""
     database = facts.databases.get(name)
     if database is None:
-        raise Refused(f"it needs a database called `{name}`, and this hub gives it none")
-    return {"host": database.host, "port": database.port, "db_name": database.name, "username": database.username, "password": database.password}
+        raise Refused(
+            f"it needs a database called `{name}`, and this hub gives it none"
+        )
+    return {
+        "host": database.host,
+        "port": database.port,
+        "db_name": database.name,
+        "username": database.username,
+        "password": database.password,
+    }
 
 
 def redis(facts: Facts) -> dict[str, JSON]:
@@ -54,7 +68,9 @@ def datalayer(facts: Facts, *required: str) -> dict[str, JSON]:
     storage = facts.storage
     missing = [purpose for purpose in required if purpose not in storage.buckets]
     if missing:
-        raise Refused(f"it needs a bucket for {', '.join(missing)}, and this hub made none")
+        raise Refused(
+            f"it needs a bucket for {', '.join(missing)}, and this hub made none"
+        )
     return {
         "access_key": storage.access_key,
         "secret_key": storage.secret_key,
@@ -63,7 +79,11 @@ def datalayer(facts: Facts, *required: str) -> dict[str, JSON]:
         "protocol": storage.protocol,
         "region": storage.region,
         **({"role_arn": storage.role_arn} if storage.role_arn else {}),
-        **({"session_duration_seconds": storage.session_duration_seconds} if storage.session_duration_seconds else {}),
+        **(
+            {"session_duration_seconds": storage.session_duration_seconds}
+            if storage.session_duration_seconds
+            else {}
+        ),
         **{purpose: {"bucket": bucket} for purpose, bucket in storage.buckets.items()},
     }
 
@@ -72,7 +92,10 @@ def instance(facts: Facts) -> dict[str, JSON]:
     """``instance``: the service's own key, and whom it trusts."""
     if facts.instance is None:
         raise Refused("it needs an instance key, and this hub gives it none")
-    return {"private_key": facts.instance.private_key, "trust": facts.instance.trust.model_dump(exclude_none=True)}
+    return {
+        "private_key": facts.instance.private_key,
+        "trust": facts.instance.trust.model_dump(exclude_none=True),
+    }
 
 
 def rekuest_hook(facts: Facts) -> dict[str, JSON] | None:
@@ -103,7 +126,12 @@ def server(facts: Facts) -> dict[str, JSON]:
     And ``telemetry``, on a hub whose operator turned it on: every service sends to the same
     collector, so it is written here once rather than by each release.
     """
-    document: dict[str, JSON] = {"django": django(facts), "postgres": postgres(facts), "redis": redis(facts), "authentikate": facts.hub.auth}
+    document: dict[str, JSON] = {
+        "django": django(facts),
+        "postgres": postgres(facts),
+        "redis": redis(facts),
+        "authentikate": facts.hub.auth,
+    }
     collector = telemetry(facts)
     if collector is not None:
         document["telemetry"] = collector

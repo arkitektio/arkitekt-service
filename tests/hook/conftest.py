@@ -7,8 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from django.conf import settings as django_settings
-from arkitekt_service import trust
 
+from arkitekt_service import trust
 from hook_project.urls import agent
 
 REKUEST = "rekuest"
@@ -25,11 +25,25 @@ class Intake:
             def do_POST(self):  # noqa: N802
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 try:
-                    verified = trust.verify("POST", self.path, body, self.headers.get("Authorization"), audience=REKUEST)
+                    verified = trust.verify(
+                        "POST",
+                        self.path,
+                        body,
+                        self.headers.get("Authorization"),
+                        audience=REKUEST,
+                    )
                     issuer = verified.issuer
                 except trust.TrustError as error:
                     issuer = f"refused: {error}"
-                intake.received.append({"path": self.path, "headers": dict(self.headers), "body": body, "json": json.loads(body), "issuer": issuer})
+                intake.received.append(
+                    {
+                        "path": self.path,
+                        "headers": dict(self.headers),
+                        "body": body,
+                        "json": json.loads(body),
+                        "issuer": issuer,
+                    }
+                )
                 self.send_response(202)
                 self.end_headers()
 
@@ -55,9 +69,26 @@ def intake(settings):
     server.server.shutdown()
 
 
-def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "worker", agent: str = "7") -> dict:
+def as_rekuest(
+    method: str,
+    path: str,
+    body: bytes = b"",
+    *,
+    audience: str = "worker",
+    agent: str = "7",
+) -> dict:
     """Headers of a request rekuest sends to the agent."""
-    return {"Authorization": trust.sign(method, path, body, issuer=REKUEST, audience=audience, key=django_settings.REKUEST_KEY), "X-Rekuest-Agent": agent}
+    return {
+        "Authorization": trust.sign(
+            method,
+            path,
+            body,
+            issuer=REKUEST,
+            audience=audience,
+            key=django_settings.REKUEST_KEY,
+        ),
+        "X-Rekuest-Agent": agent,
+    }
 
 
 @pytest.fixture(autouse=True)

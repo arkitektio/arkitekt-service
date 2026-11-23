@@ -1,0 +1,17 @@
+{
+  "extends": "./pyright.shared.json",
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/migrations",
+    "**/__pycache__",
+    "**/node_modules",
+    ".venv",
+    "build",
+    "dist"
+  ],
+  "strict": [
+    "arkitekt_service/contract"
+  ]
+}

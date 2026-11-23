@@ -37,7 +37,9 @@ DESCRIPTOR_TYPES = ("ANY", "INT", "FLOAT", "STRING", "BOOL", "LIST")
 
 def check_identifier(identifier: str) -> str:
     if not IDENTIFIER.match(identifier):
-        raise ValueError(f"A structure identifier looks like @package/key, not {identifier!r}")
+        raise ValueError(
+            f"A structure identifier looks like @package/key, not {identifier!r}"
+        )
     return identifier
 
 
@@ -51,7 +53,9 @@ class Descriptor:
 
     def __post_init__(self) -> None:
         if self.type not in DESCRIPTOR_TYPES:
-            raise ValueError(f"A descriptor type is one of {DESCRIPTOR_TYPES}, not {self.type!r}")
+            raise ValueError(
+                f"A descriptor type is one of {DESCRIPTOR_TYPES}, not {self.type!r}"
+            )
 
     def manifest(self) -> dict[str, Any]:
         return {"key": self.key, "type": self.type, "description": self.description}
@@ -74,7 +78,11 @@ class Structure:
 
     def dependencies(self, obj: Any) -> list[Any]:
         """What ``obj`` needs to be seen, besides what is part of it: ``depends(obj)``, Nones dropped."""
-        return [found for found in (self.depends(obj) if self.depends is not None else ()) if found is not None]
+        return [
+            found
+            for found in (self.depends(obj) if self.depends is not None else ())
+            if found is not None
+        ]
 
     @property
     def keys(self) -> tuple[str, ...]:
@@ -89,4 +97,9 @@ class Structure:
         return dict(getattr(obj, "stored_descriptors", None) or {})
 
     def manifest(self) -> dict[str, Any]:
-        return {"identifier": self.identifier, "label": self.label, "description": self.description, "descriptors": [d.manifest() for d in self.descriptors]}
+        return {
+            "identifier": self.identifier,
+            "label": self.label,
+            "description": self.description,
+            "descriptors": [d.manifest() for d in self.descriptors],
+        }

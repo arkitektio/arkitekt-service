@@ -55,7 +55,9 @@ class FeedPublisher:
         self.identifier = identifier
         self._feeds: dict[str, Published] = {}
 
-    def feed(self, feed: str, *, readers: Sequence[str], render: Render | None = None) -> None:
+    def feed(
+        self, feed: str, *, readers: Sequence[str], render: Render | None = None
+    ) -> None:
         """Serve ``feed`` to the services ``readers`` (their names in the hub: ``kraph``)."""
         if feed in self._feeds:
             raise ValueError(f"The feed {feed!r} is published twice")
@@ -69,7 +71,13 @@ class FeedPublisher:
         if request.method != "POST":
             return HttpResponse(status=405)
         try:
-            verified = trust.verify("POST", request.path, request.body, request.headers.get("Authorization"), audience=self.identifier)
+            verified = trust.verify(
+                "POST",
+                request.path,
+                request.body,
+                request.headers.get("Authorization"),
+                audience=self.identifier,
+            )
         except trust.TrustError as error:
             logger.info("Refused a feed read: %s", error)
             return JsonResponse({"error": "Invalid signature"}, status=401)
@@ -77,19 +85,29 @@ class FeedPublisher:
             asked = json.loads(request.body)
             feed = str(asked["feed"])
             organization = str(asked["organization"])
-            after = Cursor(int(asked.get("after", {}).get("xid", 0)), int(asked.get("after", {}).get("id", 0)))
+            after = Cursor(
+                int(asked.get("after", {}).get("xid", 0)),
+                int(asked.get("after", {}).get("id", 0)),
+            )
             limit = max(1, min(int(asked.get("limit", 1000)), MAX_LIMIT))
         except (ValueError, KeyError, TypeError, AttributeError):
-            return JsonResponse({"error": "Expected feed, organization, after {xid, id} and limit"}, status=400)
+            return JsonResponse(
+                {"error": "Expected feed, organization, after {xid, id} and limit"},
+                status=400,
+            )
         published = self._feeds.get(feed)
         if published is None:
             return JsonResponse({"error": f"No feed {feed!r}"}, status=404)
         if verified.issuer not in published.readers:
-            logger.info("Refused %s a read of %s: not one of its readers", verified.issuer, feed)
+            logger.info(
+                "Refused %s a read of %s: not one of its readers", verified.issuer, feed
+            )
             return JsonResponse({"error": "Not a reader of this feed"}, status=403)
 
         page = changes(feed, organization, after, limit)
-        bodies = published.render(page.entries) if published.render and page.entries else {}
+        bodies = (
+            published.render(page.entries) if published.render and page.entries else {}
+        )
         return JsonResponse(
             {
                 "feed": feed,
@@ -121,4 +139,10 @@ class FeedPublisher:
             return self.page(request)
 
         prefix = (getattr(settings, "MY_SCRIPT_NAME", "") or "").strip("/")
-        return [path(f"{prefix}/_feed" if prefix else "_feed", page_view, name="arkitekt_feed")]
+        return [
+            path(
+                f"{prefix}/_feed" if prefix else "_feed",
+                page_view,
+                name="arkitekt_feed",
+            )
+        ]

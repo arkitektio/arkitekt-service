@@ -39,7 +39,9 @@ SENTENCE = re.compile(r"[A-Z].{11,}[.!]")
 
 def _a_sentence(description: str) -> str:
     if not SENTENCE.fullmatch(description.strip()):
-        raise ValueError(f"`{description}` does not describe it: say in a full sentence, to whoever grants it, what it lets the holder see or do (a capital first, a full stop last)")
+        raise ValueError(
+            f"`{description}` does not describe it: say in a full sentence, to whoever grants it, what it lets the holder see or do (a capital first, a full stop last)"
+        )
     return description.strip()
 
 
@@ -51,8 +53,13 @@ class Scope(Said):
     """
 
     key: str
-    description: str = Field(description="What it lets an app do, in a full sentence, as the user is asked to grant it.")
-    is_all_scope: bool = Field(default=False, description="It grants everything the service offers: every scope check here passes with it.")
+    description: str = Field(
+        description="What it lets an app do, in a full sentence, as the user is asked to grant it."
+    )
+    is_all_scope: bool = Field(
+        default=False,
+        description="It grants everything the service offers: every scope check here passes with it.",
+    )
 
     @field_validator("description")
     @classmethod
@@ -64,7 +71,9 @@ class Role(Said):
     """What a member may do here, as an organization's admins hand it out."""
 
     key: str
-    description: str = Field(description="What it lets a member do, in a full sentence, as an admin hands it out.")
+    description: str = Field(
+        description="What it lets a member do, in a full sentence, as an admin hands it out."
+    )
     is_admin_role: bool = Field(
         default=False,
         description="It lets a member do everything in the service: every role check here passes with it. The coordination server gives it to the organization's owner and admins.",
@@ -82,7 +91,9 @@ class Role(Said):
     @model_validator(mode="after")
     def _one_kind_of_catch(self) -> Role:
         if self.is_admin_role and self.is_default_role:
-            raise ValueError(f"`{self.key}` cannot be both the admin role and the role every member holds")
+            raise ValueError(
+                f"`{self.key}` cannot be both the admin role and the role every member holds"
+            )
         return self
 
 
@@ -94,11 +105,25 @@ class Needs(Said):
         description="A database for each of these names, in the hub's Postgres. The hub calls each `<service>_<name>`; the service is handed them by the name it gave. Empty for a service that keeps nothing in Postgres.",
     )
     redis: bool = True
-    storage: list[str] = Field(default_factory=list, description="A bucket for each of these purposes (media, zarr, parquet, bigfile, …).")
-    instance_key: bool = Field(default=False, description="A key of its own, vouched for by the hub: it signs or verifies requests between services.")
-    admin: bool = Field(default=True, description="It creates an operator account from the hub's admin.")
-    peers: list[str] = Field(default_factory=list, description="Parts of the hub it uses when they are there (rekuest, ollama, livekit).")
-    secrets: list[str] = Field(default_factory=list, description="Key files it needs mounted, by name (fernet).")
+    storage: list[str] = Field(
+        default_factory=list,
+        description="A bucket for each of these purposes (media, zarr, parquet, bigfile, …).",
+    )
+    instance_key: bool = Field(
+        default=False,
+        description="A key of its own, vouched for by the hub: it signs or verifies requests between services.",
+    )
+    admin: bool = Field(
+        default=True, description="It creates an operator account from the hub's admin."
+    )
+    peers: list[str] = Field(
+        default_factory=list,
+        description="Parts of the hub it uses when they are there (rekuest, ollama, livekit).",
+    )
+    secrets: list[str] = Field(
+        default_factory=list,
+        description="Key files it needs mounted, by name (fernet).",
+    )
     scopes: list[Scope] = Field(
         default_factory=list,
         description="What an app may ask to do here. When there are any, exactly one is the all-scope.",
@@ -113,17 +138,27 @@ class Needs(Said):
     def _databases_are_named_as_postgres_names_them(cls, names: list[str]) -> list[str]:
         for name in names:
             if not PLAIN_NAME.fullmatch(name) or len(name) > POSTGRES_NAME_LENGTH:
-                raise ValueError(f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most")
+                raise ValueError(
+                    f"`{name}` is not a name Postgres takes unquoted: a lowercase letter, then lowercase letters, digits and underscores, {POSTGRES_NAME_LENGTH} characters at most"
+                )
         if len(set(names)) != len(names):
-            raise ValueError(f"a database is named twice: {', '.join(sorted({n for n in names if names.count(n) > 1}))}")
+            raise ValueError(
+                f"a database is named twice: {', '.join(sorted({n for n in names if names.count(n) > 1}))}"
+            )
         return names
 
 
 class Offers(Said):
     """What the service offers a hub."""
 
-    health: str = Field(default="ht", description="The path, under the service's own, that answers whether it works.")
-    endpoints: dict[str, str] = Field(default_factory=dict, description="Endpoints other services are wired to, by kind, as paths under the service's own (rekuest_service: _rekuest/service).")
+    health: str = Field(
+        default="ht",
+        description="The path, under the service's own, that answers whether it works.",
+    )
+    endpoints: dict[str, str] = Field(
+        default_factory=dict,
+        description="Endpoints other services are wired to, by kind, as paths under the service's own (rekuest_service: _rekuest/service).",
+    )
 
 
 class Job(Said):
@@ -134,9 +169,16 @@ class Job(Said):
     again (``konstruktor job run <service> <job>``).
     """
 
-    command: list[str] = Field(description="What to run, in a container of the image, with the service's config.")
-    summary: str = Field(default="", description="What it does, in a line an operator reads.")
-    includes: list[str] = Field(default_factory=list, description="Other jobs this one runs as part of itself, in order: `migrate` includes the service's setup.")
+    command: list[str] = Field(
+        description="What to run, in a container of the image, with the service's config."
+    )
+    summary: str = Field(
+        default="", description="What it does, in a line an operator reads."
+    )
+    includes: list[str] = Field(
+        default_factory=list,
+        description="Other jobs this one runs as part of itself, in order: `migrate` includes the service's setup.",
+    )
 
 
 class Sidecar(Said):
@@ -146,10 +188,17 @@ class Sidecar(Said):
     has the use for it (``optional``: Lok's mesh control server, on a hub with a mesh).
     """
 
-    name: str = Field(description="What a hub calls it beside the service: `takt` runs as `<service>-takt`.")
-    image: str = Field(description="Its image, from the service's own: `{repository}` and `{tag}` stand for the parts of the image this description came from (`{repository}-takt:{tag}`).")
+    name: str = Field(
+        description="What a hub calls it beside the service: `takt` runs as `<service>-takt`."
+    )
+    image: str = Field(
+        description="Its image, from the service's own: `{repository}` and `{tag}` stand for the parts of the image this description came from (`{repository}-takt:{tag}`)."
+    )
     summary: str = ""
-    optional: bool = Field(default=False, description="Whether the service runs without it: an installer starts an optional one only on a hub that asked for what it brings.")
+    optional: bool = Field(
+        default=False,
+        description="Whether the service runs without it: an installer starts an optional one only on a hub that asked for what it brings.",
+    )
 
 
 #: What a structure is known by across a hub: ``@mikro/arraydataset``.
@@ -173,16 +222,23 @@ class Descriptor(Said):
 class Structure(Said):
     """A kind of object the service holds, known to the hub by its identifier."""
 
-    identifier: str = Field(description="`@package/key`: what an action's port asks for, and what a signal is about.")
+    identifier: str = Field(
+        description="`@package/key`: what an action's port asks for, and what a signal is about."
+    )
     label: str | None = None
     description: str | None = None
-    descriptors: list[Descriptor] = Field(default_factory=list, description="What is known of each of its objects, by key: what an action may require of an input, and a trigger test.")
+    descriptors: list[Descriptor] = Field(
+        default_factory=list,
+        description="What is known of each of its objects, by key: what an action may require of an input, and a trigger test.",
+    )
 
     @field_validator("identifier")
     @classmethod
     def _the_identifier_is_one(cls, identifier: str) -> str:
         if not STRUCTURE_IDENTIFIER.fullmatch(identifier):
-            raise ValueError(f"a structure identifier looks like @package/key, not {identifier!r}")
+            raise ValueError(
+                f"a structure identifier looks like @package/key, not {identifier!r}"
+            )
         return identifier
 
     @field_validator("descriptors")
@@ -199,7 +255,10 @@ class Signal(Said):
 
     identifier: str
     kinds: list[SignalKind] = Field(default_factory=lambda: ["CREATED"], min_length=1)
-    descriptors: list[str] = Field(default_factory=list, description="The descriptor keys an announcement carries: what a trigger can test.")
+    descriptors: list[str] = Field(
+        default_factory=list,
+        description="The descriptor keys an announcement carries: what a trigger can test.",
+    )
     description: str | None = None
 
 
@@ -217,17 +276,35 @@ class Hosts(Said):
 
     @model_validator(mode="after")
     def _each_is_said_once(self) -> Hosts:
-        for what, identifiers in (("structure", [s.identifier for s in self.structures]), ("signal", [s.identifier for s in self.signals])):
-            twice = sorted({identifier for identifier in identifiers if identifiers.count(identifier) > 1})
+        for what, identifiers in (
+            ("structure", [s.identifier for s in self.structures]),
+            ("signal", [s.identifier for s in self.signals]),
+        ):
+            twice = sorted(
+                {
+                    identifier
+                    for identifier in identifiers
+                    if identifiers.count(identifier) > 1
+                }
+            )
             if twice:
                 raise ValueError(f"the {what} {', '.join(twice)} is declared twice")
         return self
 
     def structure(self, identifier: str) -> Structure | None:
-        return next((structure for structure in self.structures if structure.identifier == identifier), None)
+        return next(
+            (
+                structure
+                for structure in self.structures
+                if structure.identifier == identifier
+            ),
+            None,
+        )
 
     def signal(self, identifier: str) -> Signal | None:
-        return next((signal for signal in self.signals if signal.identifier == identifier), None)
+        return next(
+            (signal for signal in self.signals if signal.identifier == identifier), None
+        )
 
 
 class Source(Said):
@@ -237,9 +314,17 @@ class Source(Said):
     clone, the commit the image was built from, and the folder a checkout is mounted over.
     """
 
-    repository: str = Field(description="What to clone: `https://github.com/arkitektio/mikro-server-next`.")
-    revision: str | None = Field(default=None, description="The commit the image was built from, when the build said.")
-    path: str = Field(default="/workspace", description="Where the service's code sits in the image: a checkout is mounted here.")
+    repository: str = Field(
+        description="What to clone: `https://github.com/arkitektio/mikro-server-next`."
+    )
+    revision: str | None = Field(
+        default=None,
+        description="The commit the image was built from, when the build said.",
+    )
+    path: str = Field(
+        default="/workspace",
+        description="Where the service's code sits in the image: a checkout is mounted here.",
+    )
 
 
 class Description(Said):
@@ -249,7 +334,9 @@ class Description(Said):
     name: str = Field(
         description="The service's name: what a hub calls it, its path at the gateway, and the first half of its databases' names. Lowercase letters, digits and underscores, starting with a letter: no hyphen."
     )
-    identifier: str = Field(description="What the service is registered as at the coordination server, and what a client asks for: `live.arkitekt.mikro`.")
+    identifier: str = Field(
+        description="What the service is registered as at the coordination server, and what a client asks for: `live.arkitekt.mikro`."
+    )
     summary: str = ""
     needs: Needs = Field(default_factory=Needs)
     offers: Offers = Field(default_factory=Offers)
@@ -262,7 +349,8 @@ class Description(Said):
         description="What a container of the image runs to serve, and nothing else: an installer writes this as the service's command. Also the image's own `CMD`.",
     )
     debug: list[str] = Field(
-        default_factory=lambda: ["arkitekt-service", "debug"], description="The same for development: the server that reloads on a change. Serves, and nothing else, like `serve`."
+        default_factory=lambda: ["arkitekt-service", "debug"],
+        description="The same for development: the server that reloads on a change. Serves, and nothing else, like `serve`.",
     )
     jobs: dict[str, Job] = Field(
         default_factory=dict,
@@ -273,10 +361,22 @@ class Description(Said):
         description="The job that brings the service's database to this release: run once per build, before the first start and before an update's. Null when there is nothing to prepare.",
     )
     sidecars: list[Sidecar] = Field(default_factory=list)
-    hosts: Hosts = Field(default_factory=Hosts, description="The structures the service holds and the signals it sends about them.")
-    source: Source | None = Field(default=None, description="Where the image's code came from. Null for an image that does not say: it cannot be run from a checkout without being told one.")
-    requires: dict[str, str] = Field(default_factory=dict, description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').")
-    upgrade_from: str | None = Field(default=None, description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.")
+    hosts: Hosts = Field(
+        default_factory=Hosts,
+        description="The structures the service holds and the signals it sends about them.",
+    )
+    source: Source | None = Field(
+        default=None,
+        description="Where the image's code came from. Null for an image that does not say: it cannot be run from a checkout without being told one.",
+    )
+    requires: dict[str, str] = Field(
+        default_factory=dict,
+        description="Peers this release only works beside in certain versions, as version specifiers (rekuest: '>=6').",
+    )
+    upgrade_from: str | None = Field(
+        default=None,
+        description="The oldest version a deployment can be moved to this release from directly. Older ones have to stop at a release in between.",
+    )
 
     @field_validator("name")
     @classmethod
@@ -295,21 +395,33 @@ class Description(Said):
         keys = [scope.key for scope in scopes] + [role.key for role in roles]
         for key in keys:
             if not key.startswith(prefix) or not PLAIN_NAME.fullmatch(key):
-                raise ValueError(f"`{key}` is not {self.name}'s: a scope or a role is called `{prefix}<what>`, the coordination server keeps one of a key for every service")
+                raise ValueError(
+                    f"`{key}` is not {self.name}'s: a scope or a role is called `{prefix}<what>`, the coordination server keeps one of a key for every service"
+                )
         if len(set(keys)) != len(keys):
-            raise ValueError(f"a scope or a role is declared twice: {', '.join(sorted({k for k in keys if keys.count(k) > 1}))}")
+            raise ValueError(
+                f"a scope or a role is declared twice: {', '.join(sorted({k for k in keys if keys.count(k) > 1}))}"
+            )
         if scopes and sum(scope.is_all_scope for scope in scopes) != 1:
-            raise ValueError(f"{self.name} declares scopes, so exactly one of them is its all-scope (`is_all_scope`)")
+            raise ValueError(
+                f"{self.name} declares scopes, so exactly one of them is its all-scope (`is_all_scope`)"
+            )
         if roles and sum(role.is_admin_role for role in roles) != 1:
-            raise ValueError(f"{self.name} declares roles, so exactly one of them is its admin role (`is_admin_role`)")
+            raise ValueError(
+                f"{self.name} declares roles, so exactly one of them is its admin role (`is_admin_role`)"
+            )
         if sum(role.is_default_role for role in roles) > 1:
-            raise ValueError(f"{self.name} declares more than one role every member holds (`is_default_role`)")
+            raise ValueError(
+                f"{self.name} declares more than one role every member holds (`is_default_role`)"
+            )
         return self
 
     @property
     def all_scope(self) -> str | None:
         """The scope that grants everything here, when the service declares scopes."""
-        return next((scope.key for scope in self.needs.scopes if scope.is_all_scope), None)
+        return next(
+            (scope.key for scope in self.needs.scopes if scope.is_all_scope), None
+        )
 
     @property
     def admin_role(self) -> str | None:
@@ -321,5 +433,7 @@ class Description(Said):
         for database in self.needs.databases:
             called = f"{self.name}_{database}"
             if len(called) > POSTGRES_NAME_LENGTH:
-                raise ValueError(f"`{called}` is longer than the {POSTGRES_NAME_LENGTH} characters Postgres keeps of a name")
+                raise ValueError(
+                    f"`{called}` is longer than the {POSTGRES_NAME_LENGTH} characters Postgres keeps of a name"
+                )
         return self

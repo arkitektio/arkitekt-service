@@ -68,19 +68,36 @@ class Page:
 
 def _require_transaction() -> None:
     if not connection.in_atomic_block:
-        raise NotInTransaction("Record a change inside the transaction.atomic() that makes it")
+        raise NotInTransaction(
+            "Record a change inside the transaction.atomic() that makes it"
+        )
 
 
 def record_change(change: Change) -> None:
     """Record one change. Must run inside the ``transaction.atomic()`` that makes the change."""
     _require_transaction()
-    FeedEntry.objects.create(feed=change.feed, kind=change.kind, object=change.object, organization=change.organization, uuid=change.uuid)
+    FeedEntry.objects.create(
+        feed=change.feed,
+        kind=change.kind,
+        object=change.object,
+        organization=change.organization,
+        uuid=change.uuid,
+    )
 
 
 def record_changes(changes: Sequence[Change]) -> int:
     """Record many changes in one statement. Must run inside the transaction that makes them."""
     _require_transaction()
-    rows = [FeedEntry(feed=c.feed, kind=c.kind, object=c.object, organization=c.organization, uuid=c.uuid) for c in changes]
+    rows = [
+        FeedEntry(
+            feed=c.feed,
+            kind=c.kind,
+            object=c.object,
+            organization=c.organization,
+            uuid=c.uuid,
+        )
+        for c in changes
+    ]
     FeedEntry.objects.bulk_create(rows, batch_size=5000)
     return len(rows)
 
@@ -111,10 +128,23 @@ _REST_OF_TRANSACTION = f"""
 
 
 def _entries(rows: list[tuple]) -> list[Entry]:
-    return [Entry(xid=int(xid), id=id_, feed=f, kind=kind, object=obj, uuid=uid, organization=org) for xid, id_, f, kind, obj, uid, org in rows]
+    return [
+        Entry(
+            xid=int(xid),
+            id=id_,
+            feed=f,
+            kind=kind,
+            object=obj,
+            uuid=uid,
+            organization=org,
+        )
+        for xid, id_, f, kind, obj, uid, org in rows
+    ]
 
 
-def changes(feed: str, organization: str, after: Cursor | None = None, limit: int = 1000) -> Page:
+def changes(
+    feed: str, organization: str, after: Cursor | None = None, limit: int = 1000
+) -> Page:
     """The entries of ``organization`` in ``feed`` after ``after``, of transactions no open one can precede.
 
     **A page never ends inside a transaction** (up to :data:`MAX_TRANSACTION` entries): a full
@@ -131,11 +161,21 @@ def changes(feed: str, organization: str, after: Cursor | None = None, limit: in
         if len(entries) == limit:
             # Already below the horizon: the transaction is committed, its rest is all there.
             last = entries[-1]
-            cursor.execute(_REST_OF_TRANSACTION, [feed, organization, str(last.xid), last.id, MAX_TRANSACTION])
+            cursor.execute(
+                _REST_OF_TRANSACTION,
+                [feed, organization, str(last.xid), last.id, MAX_TRANSACTION],
+            )
             entries += _entries(cursor.fetchall())
-        cursor.execute("SELECT pg_snapshot_xmin(pg_current_snapshot())::text, pg_snapshot_xmax(pg_current_snapshot())::text")
+        cursor.execute(
+            "SELECT pg_snapshot_xmin(pg_current_snapshot())::text, pg_snapshot_xmax(pg_current_snapshot())::text"
+        )
         horizon, current = cursor.fetchone()
-    return Page(epoch=epoch(feed), entries=entries, horizon=int(horizon), current_xid=int(current))
+    return Page(
+        epoch=epoch(feed),
+        entries=entries,
+        horizon=int(horizon),
+        current_xid=int(current),
+    )
 
 
 def epoch(feed: str) -> str:
@@ -151,7 +191,9 @@ def epoch(feed: str) -> str:
         (database,) = cursor.fetchone()
         try:
             with transaction.atomic():
-                cursor.execute("SELECT system_identifier::text FROM pg_control_system()")
+                cursor.execute(
+                    "SELECT system_identifier::text FROM pg_control_system()"
+                )
                 (cluster,) = cursor.fetchone()
         except Exception:  # noqa: BLE001  a role without the right reads no cluster id
             cluster = "-"

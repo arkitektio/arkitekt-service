@@ -31,10 +31,15 @@ def seed(owner: Organization, *, notes: int = 3, children: int = 2) -> Space:
 
 
 def owned(owner: Organization) -> int:
-    return sum(model.objects.filter(organization=owner).count() for model in (Space, Item, Note, Link))
+    return sum(
+        model.objects.filter(organization=owner).count()
+        for model in (Space, Item, Note, Link)
+    )
 
 
-def test_only_deletes_everything_the_organization_owns_and_nothing_else(capsys: pytest.CaptureFixture[str]) -> None:
+def test_only_deletes_everything_the_organization_owns_and_nothing_else(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a, b = org("a"), org("b")
     seed(a, notes=5)
     seed(b)
@@ -44,10 +49,19 @@ def test_only_deletes_everything_the_organization_owns_and_nothing_else(capsys: 
     call_command("prune_organizations", "--only", "a", "--yes")
 
     assert owned(a) == 0 and not Child.objects.filter(item__organization=a).exists()
-    assert owned(b) == 5 and Child.objects.count() == 2, "another organization keeps all it has"
-    assert Organization.objects.filter(pk=a.pk).exists() and Membership.objects.filter(organization=a).exists(), "the identity stays"
+    assert owned(b) == 5 and Child.objects.count() == 2, (
+        "another organization keeps all it has"
+    )
+    assert (
+        Organization.objects.filter(pk=a.pk).exists()
+        and Membership.objects.filter(organization=a).exists()
+    ), "the identity stays"
     out = capsys.readouterr().out
-    assert "https://lok#a: 9 rows deleted" in out and "test_org_app.Note: 5" in out and "test_org_app.Child: 2" in out
+    assert (
+        "https://lok#a: 9 rows deleted" in out
+        and "test_org_app.Note: 5" in out
+        and "test_org_app.Child: 2" in out
+    )
 
 
 def test_keep_prunes_every_other_organization() -> None:
@@ -61,7 +75,9 @@ def test_keep_prunes_every_other_organization() -> None:
     assert owned(b) == 5
 
 
-def test_without_yes_it_counts_and_deletes_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+def test_without_yes_it_counts_and_deletes_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a = org("a")
     seed(a, notes=4)
 
@@ -69,7 +85,11 @@ def test_without_yes_it_counts_and_deletes_nothing(capsys: pytest.CaptureFixture
 
     assert owned(a) == 6
     out = capsys.readouterr().out
-    assert "https://lok#a: 6 rows owned" in out and "test_org_app.Note: 4" in out and "pass --yes to delete" in out
+    assert (
+        "https://lok#a: 6 rows owned" in out
+        and "test_org_app.Note: 4" in out
+        and "pass --yes to delete" in out
+    )
 
 
 def test_a_long_chain_of_protections_goes_in_passes() -> None:
@@ -81,7 +101,9 @@ def test_a_long_chain_of_protections_goes_in_passes() -> None:
     assert owned(a) == 0
 
 
-def test_running_it_again_finds_nothing_to_prune(capsys: pytest.CaptureFixture[str]) -> None:
+def test_running_it_again_finds_nothing_to_prune(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a = org("a")
     seed(a)
     call_command("prune_organizations", "--only", "a", "--yes")
@@ -92,7 +114,9 @@ def test_running_it_again_finds_nothing_to_prune(capsys: pytest.CaptureFixture[s
     assert "Nothing to prune" in capsys.readouterr().out
 
 
-def test_a_row_another_organization_protects_is_left_and_named(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_row_another_organization_protects_is_left_and_named(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a, b = org("a"), org("b")
     space = seed(a)
     theirs = Item.objects.create(organization=b, space=space)
@@ -100,13 +124,17 @@ def test_a_row_another_organization_protects_is_left_and_named(capsys: pytest.Ca
     with pytest.raises(CommandError, match="1 row"):
         call_command("prune_organizations", "--only", "a", "--yes")
 
-    assert list(Space.objects.filter(organization=a)) == [space], "only the protected space is left"
+    assert list(Space.objects.filter(organization=a)) == [space], (
+        "only the protected space is left"
+    )
     assert owned(a) == 1
     assert Item.objects.filter(pk=theirs.pk).exists()
     assert f"test_org_app.Space {space.pk}" in capsys.readouterr().err
 
 
-def test_a_cascade_never_takes_another_organizations_row_along(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_cascade_never_takes_another_organizations_row_along(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a, b = org("a"), org("b")
     seed(a)
     item = Item.objects.get(organization=a)
@@ -117,11 +145,15 @@ def test_a_cascade_never_takes_another_organizations_row_along(capsys: pytest.Ca
 
     assert Link.objects.filter(pk=theirs.pk).exists()
     assert Item.objects.filter(pk=item.pk).exists()
-    assert Note.objects.filter(organization=a).count() == 0, "what is not held on to goes"
+    assert Note.objects.filter(organization=a).count() == 0, (
+        "what is not held on to goes"
+    )
     assert "another organization" in capsys.readouterr().err
 
 
-def test_a_row_without_an_organization_is_its_cascade_parents(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_row_without_an_organization_is_its_cascade_parents(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Their pin on our item is theirs through its board: it is not taken along."""
     a, b = org("a"), org("b")
     seed(a)
@@ -137,8 +169,14 @@ def test_a_row_without_an_organization_is_its_cascade_parents(capsys: pytest.Cap
     with pytest.raises(CommandError):
         call_command("prune_organizations", "--only", "a", "--yes")
 
-    assert Pin.objects.filter(pk=theirs.pk).exists() and Item.objects.filter(pk=item.pk).exists()
-    assert f"test_org_app.Pin {theirs.pk}, of another organization (through board)" in capsys.readouterr().err
+    assert (
+        Pin.objects.filter(pk=theirs.pk).exists()
+        and Item.objects.filter(pk=item.pk).exists()
+    )
+    assert (
+        f"test_org_app.Pin {theirs.pk}, of another organization (through board)"
+        in capsys.readouterr().err
+    )
 
 
 def test_pruning_both_organizations_lets_the_cascade_cross() -> None:
@@ -151,7 +189,9 @@ def test_pruning_both_organizations_lets_the_cascade_cross() -> None:
     assert owned(a) == owned(b) == 0
 
 
-def test_a_big_cascade_is_split_into_transactions(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_big_cascade_is_split_into_transactions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a = org("a")
     space = Space.objects.create(organization=a)
     for _ in range(8):
@@ -164,7 +204,9 @@ def test_a_big_cascade_is_split_into_transactions(capsys: pytest.CaptureFixture[
     assert "past --max-cascade" not in capsys.readouterr().out, "split until each fits"
 
 
-def test_a_single_row_past_the_cap_still_goes_and_is_reported(capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_single_row_past_the_cap_still_goes_and_is_reported(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     a = org("a")
     seed(a, notes=0, children=30)
 
@@ -179,7 +221,9 @@ def test_receivers_see_the_rows_before_they_go() -> None:
     seed(a, notes=3)
     seen: list[int] = []
 
-    def record(sender: type, rows, organization: Organization, **kwargs: object) -> None:
+    def record(
+        sender: type, rows, organization: Organization, **kwargs: object
+    ) -> None:
         assert organization == a
         seen.extend(rows.values_list("pk", flat=True))
 
@@ -204,4 +248,6 @@ def test_a_name_must_match_exactly_one_organization() -> None:
     with pytest.raises(CommandError):
         call_command("prune_organizations", "--yes")
 
-    assert owned(Organization.objects.get(identifier="https://lok#a")) == 5, "a refused run deletes nothing"
+    assert owned(Organization.objects.get(identifier="https://lok#a")) == 5, (
+        "a refused run deletes nothing"
+    )

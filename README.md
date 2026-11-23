@@ -144,7 +144,17 @@ manages a stack uses it.
 A service declares itself in one module, named by `ARKITEKT_SERVICE` in its Dockerfile:
 
 ```python
-from arkitekt_service.contract import JSON, Contract, Description, Facts, Job, Needs, Offers, Start, blocks
+from arkitekt_service.contract import (
+    JSON,
+    Contract,
+    Description,
+    Facts,
+    Job,
+    Needs,
+    Offers,
+    Start,
+    blocks,
+)
 
 
 def render(facts: Facts) -> dict[str, JSON]:
@@ -154,14 +164,24 @@ def render(facts: Facts) -> dict[str, JSON]:
 
 
 contract = Contract(
-    description=Description(name="mikro", identifier="live.arkitekt.mikro", needs=Needs(storage=["media", "zarr"])),
+    description=Description(
+        name="mikro",
+        identifier="live.arkitekt.mikro",
+        needs=Needs(storage=["media", "zarr"]),
+    ),
     settings=Settings,
     render=render,
     # How it is started. There is no script beside this: `arkitekt-service serve` becomes it.
-    serve=Start(("daphne", "-b", "0.0.0.0", "-p", "80", "mikro_server.asgi:application")),
+    serve=Start(
+        ("daphne", "-b", "0.0.0.0", "-p", "80", "mikro_server.asgi:application")
+    ),
     debug=Start(("python", "manage.py", "runserver", "0.0.0.0:80")),
     # What else can be run in the image, by name, and which of it `migrate` runs as setup.
-    jobs={"ensureadmin": Job(("ensureadmin",), "Create the operator account the config names")},
+    jobs={
+        "ensureadmin": Job(
+            ("ensureadmin",), "Create the operator account the config names"
+        )
+    },
     setup=("ensureadmin",),
 )
 ```
@@ -198,7 +218,9 @@ from arkitekt_service.service import Service, organization_of
 from arkitekt_service.hook import HookAgent
 
 service = Service("mikro", hosts=contract.description.hosts)
-dataset = service.structure(ArrayDataset, "@mikro/arraydataset", describe=array_descriptors)
+dataset = service.structure(
+    ArrayDataset, "@mikro/arraydataset", describe=array_descriptors
+)
 service.model_signal(dataset, organization=organization_of())
 
 agent = HookAgent("mikro", description="mikro's housekeeping")
@@ -246,7 +268,9 @@ from arkitekt_service.feed.publisher import FeedPublisher
 
 with transaction.atomic():
     metric = Metric.objects.create(...)
-    record_change(Change("@mikro/metric", "CREATED", str(metric.pk), org.slug, uuid=metric.uuid))
+    record_change(
+        Change("@mikro/metric", "CREATED", str(metric.pk), org.slug, uuid=metric.uuid)
+    )
 
 publisher = FeedPublisher("mikro")
 publisher.feed("@mikro/metric", readers=["kraph"], render=render_metrics)
@@ -260,7 +284,9 @@ lost, nothing applied twice, one run at a time:
 from arkitekt_service.feed.consumer import apply_pages
 from arkitekt_service.feed.reader import FeedReader
 
-reader = FeedReader(url=mikro_feed_url, producer="mikro", feed="@mikro/metric", issuer="kraph")
+reader = FeedReader(
+    url=mikro_feed_url, producer="mikro", feed="@mikro/metric", issuer="kraph"
+)
 apply_pages(reader, "lab", apply=apply_page, budget_s=20)
 ```
 
@@ -285,7 +311,13 @@ class ArrayDataset(Described):
     ...
 
     class Meta:
-        indexes = [GinIndex(fields=["stored_descriptors"], name="mikro_ds_desc_gin", opclasses=["jsonb_path_ops"])]
+        indexes = [
+            GinIndex(
+                fields=["stored_descriptors"],
+                name="mikro_ds_desc_gin",
+                opclasses=["jsonb_path_ops"],
+            )
+        ]
 ```
 
 Every save recomputes `stored_descriptors`, a save with `update_fields` included; a new row is
@@ -323,7 +355,9 @@ structure says it needs to be seen, and what is part of any of them (a row whose
 cascading foreign keys lead to one) is in the collaboration live:
 
 ```python
-service.structure(models.Scene, "@mikro/scene", depends=lambda scene: [scene.world, *lenses_of(scene)])
+service.structure(
+    models.Scene, "@mikro/scene", depends=lambda scene: [scene.world, *lenses_of(scene)]
+)
 ```
 
 For a guest, every read is held to their collaborations:
@@ -348,7 +382,12 @@ INSTALLED_APPS = [..., "arkitekt_service.server"]
 ```
 
 ```python
-from arkitekt_service.server.settings import DjangoSettings, PostgresSettings, RedisSettings, ServiceSettings
+from arkitekt_service.server.settings import (
+    DjangoSettings,
+    PostgresSettings,
+    RedisSettings,
+    ServiceSettings,
+)
 
 
 class Settings(ServiceSettings):  # the config file, with the environment over it
@@ -391,7 +430,9 @@ telemetry.setup()  # before Django's application is built
 application = telemetry.wrap(router(schema=schema, django_asgi_app=django_asgi_app))
 
 # schema.py
-schema = kante.Schema(..., extensions=[..., TelemetryExtension])  # arkitekt_service.graphql
+schema = kante.Schema(
+    ..., extensions=[..., TelemetryExtension]
+)  # arkitekt_service.graphql
 ```
 
 With an endpoint: a span per HTTP request (not the health check, not a websocket), per GraphQL

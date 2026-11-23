@@ -44,7 +44,9 @@ def _until(ready, timeout: float = 90.0):
 
 @pytest.fixture(scope="session")
 def stack() -> Iterator[Stack]:
-    with testing(os.path.join(os.path.dirname(__file__), "docker-compose.yaml")) as deployment:
+    with testing(
+        os.path.join(os.path.dirname(__file__), "docker-compose.yaml")
+    ) as deployment:
         deployment.up()
 
         def ready() -> Stack:
@@ -54,7 +56,14 @@ def stack() -> Iterator[Stack]:
                 jaeger=f"http://localhost:{deployment.get_port('jaeger', 16686)}",
                 db_port=deployment.get_port("db", 5432),
             )
-            with psycopg.connect(dbname="testdb", user="test", password="test", host="localhost", port=found.db_port, connect_timeout=1) as connection:
+            with psycopg.connect(
+                dbname="testdb",
+                user="test",
+                password="test",
+                host="localhost",
+                port=found.db_port,
+                connect_timeout=1,
+            ) as connection:
                 connection.execute("SELECT 1")
             httpx.get(f"{found.jaeger}/api/services", timeout=2).raise_for_status()
             # Anything but a refused connection: the receiver is listening.
@@ -73,10 +82,23 @@ def _free_port() -> int:
 def _serve(stack: Stack, environment: dict[str, str]) -> Iterator[str]:
     port = _free_port()
     process = subprocess.Popen(
-        [sys.executable, "-m", "daphne", "-b", "127.0.0.1", "-p", str(port), "telemetry_project.asgi:application"],
+        [
+            sys.executable,
+            "-m",
+            "daphne",
+            "-b",
+            "127.0.0.1",
+            "-p",
+            str(port),
+            "telemetry_project.asgi:application",
+        ],
         cwd=ROOT,
         env={
-            **{name: value for name, value in os.environ.items() if not name.startswith(("TELEMETRY__", "OTEL_", "DJANGO_SETTINGS"))},
+            **{
+                name: value
+                for name, value in os.environ.items()
+                if not name.startswith(("TELEMETRY__", "OTEL_", "DJANGO_SETTINGS"))
+            },
             "ARKITEKT_SERVICE": "tests.server.served",
             "ARKITEKT_CONFIG_FILE": os.devnull,
             "TELEMETRY_TEST_DB_PORT": str(stack.db_port),
@@ -95,13 +117,28 @@ def _serve(stack: Stack, environment: dict[str, str]) -> Iterator[str]:
 @pytest.fixture(scope="session")
 def recording(stack: Stack) -> Iterator[str]:
     """The service with a collector named, sending what it has every fraction of a second."""
-    yield from _serve(stack, {"TELEMETRY__ENDPOINT": stack.collector, "OTEL_BSP_SCHEDULE_DELAY": "200", "OTEL_METRIC_EXPORT_INTERVAL": "500"})
+    yield from _serve(
+        stack,
+        {
+            "TELEMETRY__ENDPOINT": stack.collector,
+            "OTEL_BSP_SCHEDULE_DELAY": "200",
+            "OTEL_METRIC_EXPORT_INTERVAL": "500",
+        },
+    )
 
 
 @pytest.fixture(scope="session")
 def without_statements(stack: Stack) -> Iterator[str]:
     """The service recording, but no span per database statement."""
-    yield from _serve(stack, {"TELEMETRY__ENDPOINT": stack.collector, "TELEMETRY__STATEMENTS": "false", "OTEL_BSP_SCHEDULE_DELAY": "200", "OTEL_METRIC_EXPORT_INTERVAL": "500"})
+    yield from _serve(
+        stack,
+        {
+            "TELEMETRY__ENDPOINT": stack.collector,
+            "TELEMETRY__STATEMENTS": "false",
+            "OTEL_BSP_SCHEDULE_DELAY": "200",
+            "OTEL_METRIC_EXPORT_INTERVAL": "500",
+        },
+    )
 
 
 @pytest.fixture(scope="session")

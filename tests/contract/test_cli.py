@@ -13,10 +13,28 @@ from pydantic import ValidationError
 from arkitekt_service.contract import Description, Needs, Role, Scope, cli
 
 FACTS = {
-    "me": {"name": "example", "path": "example", "url": "http://example:80/example", "identifier": "live.arkitekt.example", "secret_key": "s3cret"},
+    "me": {
+        "name": "example",
+        "path": "example",
+        "url": "http://example:80/example",
+        "identifier": "live.arkitekt.example",
+        "secret_key": "s3cret",
+    },
     "hub": {"auth": {"issuers": []}},
-    "databases": {"main": {"host": "db", "name": "example_main", "username": "hub", "password": "pw"}},
-    "peers": {"rekuest": {"url": "http://rekuest:80/rekuest", "offers": {"agent": "http://rekuest-takt:8080/rekuest"}}},
+    "databases": {
+        "main": {
+            "host": "db",
+            "name": "example_main",
+            "username": "hub",
+            "password": "pw",
+        }
+    },
+    "peers": {
+        "rekuest": {
+            "url": "http://rekuest:80/rekuest",
+            "offers": {"agent": "http://rekuest-takt:8080/rekuest"},
+        }
+    },
 }
 
 
@@ -32,7 +50,9 @@ def written(tmp_path: Path, name: str, document: object) -> Path:
     return path
 
 
-def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: pytest.CaptureFixture[str]) -> None:
+def test_describe_says_what_the_service_needs_before_it_has_any_config(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert cli.main(["describe"]) == 0
 
     said = json.loads(capsys.readouterr().out)
@@ -43,15 +63,24 @@ def test_describe_says_what_the_service_needs_before_it_has_any_config(capsys: p
     assert said["jobs"]["migrate"]["command"] == ["arkitekt-service", "run", "migrate"]
     # How it is started is the image's to say too, for both of the ways it is run: through
     # this command, which becomes what the service declared.
-    assert said["serve"] == ["arkitekt-service", "serve"] and said["debug"] == ["arkitekt-service", "debug"]
+    assert said["serve"] == ["arkitekt-service", "serve"] and said["debug"] == [
+        "arkitekt-service",
+        "debug",
+    ]
     assert said["sidecars"] == []
-    assert said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
+    assert (
+        said["needs"]["storage"] == ["media"] and said["needs"]["instance_key"] is True
+    )
     assert said["offers"]["endpoints"] == {"rekuest_hook": "_rekuest/hook"}
     assert said["requires"] == {"rekuest": ">=6"} and said["upgrade_from"] == "1.0.0"
 
 
-def test_label_is_the_description_on_one_line_for_a_build_to_stamp(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example")
+def test_label_is_the_description_on_one_line_for_a_build_to_stamp(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(
+        "ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example"
+    )
     monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "3f2a9c1d")
     assert cli.main(["describe"]) == 0
     described = json.loads(capsys.readouterr().out)
@@ -65,27 +94,59 @@ def test_label_is_the_description_on_one_line_for_a_build_to_stamp(monkeypatch: 
     assert described["source"]["revision"] == "3f2a9c1d"
 
 
-def test_render_writes_the_releases_config_from_the_hubs_facts(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_render_writes_the_releases_config_from_the_hubs_facts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     facts = written(tmp_path, "facts.yaml", FACTS)
 
-    assert cli.main(["render", "--facts", str(facts), "--overrides", str(tmp_path / "none.yaml")]) == 0
+    assert (
+        cli.main(
+            [
+                "render",
+                "--facts",
+                str(facts),
+                "--overrides",
+                str(tmp_path / "none.yaml"),
+            ]
+        )
+        == 0
+    )
 
     config = yaml.safe_load(capsys.readouterr().out)
-    assert config["postgres"] == {"host": "db", "db_name": "example_main", "password": "pw"}
+    assert config["postgres"] == {
+        "host": "db",
+        "db_name": "example_main",
+        "password": "pw",
+    }
     assert config["django"]["force_script_name"] == "example"
     # Wired to a peer by what the peer offers, not by a name the installer knew.
     assert config["rekuest_hook"] == {"rekuest_url": "http://rekuest-takt:8080/rekuest"}
 
 
-def test_what_the_operator_set_is_laid_over_and_kept(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_what_the_operator_set_is_laid_over_and_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     facts = written(tmp_path, "facts.yaml", FACTS)
-    overrides = written(tmp_path, "overrides.yaml", {"django": {"debug": True}, "postgres": {"sslmode": "require"}})
+    overrides = written(
+        tmp_path,
+        "overrides.yaml",
+        {"django": {"debug": True}, "postgres": {"sslmode": "require"}},
+    )
 
-    assert cli.main(["render", "--facts", str(facts), "--overrides", str(overrides)]) == 0
+    assert (
+        cli.main(["render", "--facts", str(facts), "--overrides", str(overrides)]) == 0
+    )
 
     config = yaml.safe_load(capsys.readouterr().out)
-    assert config["django"] == {"secret_key": "s3cret", "debug": True, "force_script_name": "example"}
-    assert config["postgres"]["sslmode"] == "require" and config["postgres"]["host"] == "db"
+    assert config["django"] == {
+        "secret_key": "s3cret",
+        "debug": True,
+        "force_script_name": "example",
+    }
+    assert (
+        config["postgres"]["sslmode"] == "require"
+        and config["postgres"]["host"] == "db"
+    )
 
 
 @pytest.mark.parametrize(
@@ -95,40 +156,94 @@ def test_what_the_operator_set_is_laid_over_and_kept(tmp_path: Path, capsys: pyt
         ({"django": {"debug": "perhaps"}}, "django.debug"),
     ],
 )
-def test_an_override_this_release_does_not_read_is_refused_by_name(tmp_path: Path, capsys: pytest.CaptureFixture[str], overrides: dict[str, object], named: str) -> None:
+def test_an_override_this_release_does_not_read_is_refused_by_name(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    overrides: dict[str, object],
+    named: str,
+) -> None:
     facts = written(tmp_path, "facts.yaml", FACTS)
 
-    assert cli.main(["render", "--facts", str(facts), "--overrides", str(written(tmp_path, "overrides.yaml", overrides))]) == cli.REFUSED
+    assert (
+        cli.main(
+            [
+                "render",
+                "--facts",
+                str(facts),
+                "--overrides",
+                str(written(tmp_path, "overrides.yaml", overrides)),
+            ]
+        )
+        == cli.REFUSED
+    )
 
     said = capsys.readouterr()
     assert said.out == "", "a refusal prints no config"
     assert named in said.err
 
 
-def test_facts_the_release_cannot_be_configured_from_are_refused(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    without_database = {key: value for key, value in FACTS.items() if key != "databases"}
-    assert cli.main(["render", "--facts", str(written(tmp_path, "facts.yaml", without_database))]) == cli.REFUSED
+def test_facts_the_release_cannot_be_configured_from_are_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    without_database = {
+        key: value for key, value in FACTS.items() if key != "databases"
+    }
+    assert (
+        cli.main(
+            [
+                "render",
+                "--facts",
+                str(written(tmp_path, "facts.yaml", without_database)),
+            ]
+        )
+        == cli.REFUSED
+    )
     assert "it needs a database" in capsys.readouterr().err
 
     # A fact this contract does not know: an installer newer than the image.
-    assert cli.main(["render", "--facts", str(written(tmp_path, "facts.yaml", {**FACTS, "mesh": {"node": "n"}}))]) == cli.REFUSED
+    assert (
+        cli.main(
+            [
+                "render",
+                "--facts",
+                str(written(tmp_path, "facts.yaml", {**FACTS, "mesh": {"node": "n"}})),
+            ]
+        )
+        == cli.REFUSED
+    )
     assert "mesh" in capsys.readouterr().err
 
 
-def test_check_judges_a_config_as_it_stands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    good = {"django": {"secret_key": "s"}, "postgres": {"host": "db", "db_name": "x", "password": "p"}, "somebody_elses": {"x": 1}}
-    assert cli.main(["check", "--config", str(written(tmp_path, "good.yaml", good))]) == 0
+def test_check_judges_a_config_as_it_stands(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    good = {
+        "django": {"secret_key": "s"},
+        "postgres": {"host": "db", "db_name": "x", "password": "p"},
+        "somebody_elses": {"x": 1},
+    }
+    assert (
+        cli.main(["check", "--config", str(written(tmp_path, "good.yaml", good))]) == 0
+    )
 
     stale = {**good, "rekuest_hook": {"rekuest_url": "http://r", "secret": "old"}}
-    assert cli.main(["check", "--config", str(written(tmp_path, "stale.yaml", stale))]) == cli.REFUSED
+    assert (
+        cli.main(["check", "--config", str(written(tmp_path, "stale.yaml", stale))])
+        == cli.REFUSED
+    )
     assert "rekuest_hook.secret" in capsys.readouterr().err
 
     # A key read under its former name is the release's to rename: said elsewhere, not refused.
     renamed = {**good, "rekuest_hook": {"agent_url": "http://r"}}
-    assert cli.main(["check", "--config", str(written(tmp_path, "renamed.yaml", renamed))]) == 0
+    assert (
+        cli.main(["check", "--config", str(written(tmp_path, "renamed.yaml", renamed))])
+        == 0
+    )
 
 
-def test_an_image_that_does_not_say_where_its_contract_is_has_none(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_image_that_does_not_say_where_its_contract_is_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("ARKITEKT_SERVICE")
     with pytest.raises(LookupError):
         cli.main(["describe"])
@@ -141,12 +256,25 @@ def test_the_shared_blocks_are_written_from_the_same_facts() -> None:
         {
             **FACTS,
             "redis": {"host": "redis"},
-            "storage": {"host": "rustfs", "port": 9000, "access_key": "a", "secret_key": "s", "buckets": {"media": "examplemedia"}},
+            "storage": {
+                "host": "rustfs",
+                "port": 9000,
+                "access_key": "a",
+                "secret_key": "s",
+                "buckets": {"media": "examplemedia"},
+            },
         }
     )
-    assert blocks.server(facts).keys() == {"django", "postgres", "redis", "authentikate"}
+    assert blocks.server(facts).keys() == {
+        "django",
+        "postgres",
+        "redis",
+        "authentikate",
+    }
     assert blocks.datalayer(facts, "media")["media"] == {"bucket": "examplemedia"}
-    assert blocks.rekuest_hook(facts) == {"rekuest_url": "http://rekuest-takt:8080/rekuest"}
+    assert blocks.rekuest_hook(facts) == {
+        "rekuest_url": "http://rekuest-takt:8080/rekuest"
+    }
     with pytest.raises(Refused, match="zarr"):
         blocks.datalayer(facts, "media", "zarr")
     with pytest.raises(Refused, match="instance key"):
@@ -162,21 +290,33 @@ def test_a_hubs_collector_becomes_every_services_telemetry_block() -> None:
     assert blocks.telemetry(Facts.model_validate(base)) is None
 
     def told(collector: dict[str, object]) -> Facts:
-        return Facts.model_validate({**base, "peers": {**FACTS["peers"], "telemetry": collector}})
+        return Facts.model_validate(
+            {**base, "peers": {**FACTS["peers"], "telemetry": collector}}
+        )
 
-    theirs = told({"url": "http://collector:4318", "offers": {"otlp": "http://collector:4318"}})
+    theirs = told(
+        {"url": "http://collector:4318", "offers": {"otlp": "http://collector:4318"}}
+    )
     assert blocks.telemetry(theirs) == {"endpoint": "http://collector:4318"}
     assert blocks.server(theirs)["telemetry"] == {"endpoint": "http://collector:4318"}
 
     # One that takes traces only says so, and the service sends it no metrics.
-    jaeger = told({"url": "http://jaeger:4318", "offers": {"otlp": "http://jaeger:4318"}, "settings": {"metrics": "false"}})
+    jaeger = told(
+        {
+            "url": "http://jaeger:4318",
+            "offers": {"otlp": "http://jaeger:4318"},
+            "settings": {"metrics": "false"},
+        }
+    )
     block = blocks.telemetry(jaeger)
     assert block == {"endpoint": "http://jaeger:4318", "metrics": False}
     read = TelemetrySettings.model_validate(block)
     assert read.endpoint == "http://jaeger:4318" and read.metrics is False
 
 
-def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Wait, migrate, then the jobs the service named as its setup — and a step that fails is the answer."""
     _with_jobs(monkeypatch)
 
@@ -185,17 +325,32 @@ def test_migrate_prepares_the_database_in_order_and_stops_at_the_first_failure(m
     assert cli.main(["run", "migrate"]) == 0
     # It waits for a connection and no longer: nothing here is worth a fixed delay. A job
     # that is not part of the setup (`reindex`) is not run.
-    assert ran == [["wait_for_database", "-s", "0"], ["migrate", "--noinput"], ["ensureadmin"], ["ensurerepos", "--quiet"]]
+    assert ran == [
+        ["wait_for_database", "-s", "0"],
+        ["migrate", "--noinput"],
+        ["ensureadmin"],
+        ["ensurerepos", "--quiet"],
+    ]
 
     ran.clear()
-    monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or (3 if "migrate" in step else 0))
+    monkeypatch.setattr(
+        cli,
+        "manage",
+        lambda *step: ran.append(list(step)) or (3 if "migrate" in step else 0),
+    )
     assert cli.main(["run", "migrate"]) == 3
-    assert [step[0] for step in ran] == ["wait_for_database", "migrate"], "nothing runs after a failed migration"
+    assert [step[0] for step in ran] == ["wait_for_database", "migrate"], (
+        "nothing runs after a failed migration"
+    )
 
 
-def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_steps_of_a_preparation_share_one_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Each `manage.py` command runs in this interpreter, and its exit code comes back."""
-    (tmp_path / "manage.py").write_text("import os, sys\nwith open('ran', 'a') as log:\n    log.write(f'{os.getpid()} {sys.argv[1:]}\\n')\nif sys.argv[1] == 'fails':\n    sys.exit(4)\n")
+    (tmp_path / "manage.py").write_text(
+        "import os, sys\nwith open('ran', 'a') as log:\n    log.write(f'{os.getpid()} {sys.argv[1:]}\\n')\nif sys.argv[1] == 'fails':\n    sys.exit(4)\n"
+    )
     monkeypatch.chdir(tmp_path)
 
     assert cli.manage("first", "--flag") == 0
@@ -213,9 +368,20 @@ def test_the_steps_of_a_preparation_share_one_process(tmp_path: Path, monkeypatc
 def test_a_sidecars_image_is_named_from_the_services_own() -> None:
     from arkitekt_service.contract import Description, Sidecar
 
-    said = Description(name="pair", identifier="live.arkitekt.pair", sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")]).model_dump(mode="json")
+    said = Description(
+        name="pair",
+        identifier="live.arkitekt.pair",
+        sidecars=[Sidecar(name="takt", image="{repository}-takt:{tag}")],
+    ).model_dump(mode="json")
 
-    assert said["sidecars"] == [{"name": "takt", "image": "{repository}-takt:{tag}", "summary": "", "optional": False}]
+    assert said["sidecars"] == [
+        {
+            "name": "takt",
+            "image": "{repository}-takt:{tag}",
+            "summary": "",
+            "optional": False,
+        }
+    ]
     # Written by hand, a description names no job: they are the contract's to say.
     assert said["jobs"] == {} and said["prepare"] is None
 
@@ -225,12 +391,15 @@ def _with_jobs(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
 
     from arkitekt_service.contract import Job
     from arkitekt_service.contract import contract as declared
-
     from tests.contract import example
 
     with_jobs = dataclasses.replace(
         example.contract,
-        jobs={"ensureadmin": Job(("ensureadmin",), "Create the operator account"), "ensurerepos": Job(("ensurerepos", "--quiet"), "Clone the repositories"), "reindex": Job(("reindex",))},
+        jobs={
+            "ensureadmin": Job(("ensureadmin",), "Create the operator account"),
+            "ensurerepos": Job(("ensurerepos", "--quiet"), "Clone the repositories"),
+            "reindex": Job(("reindex",)),
+        },
         setup=("ensureadmin", "ensurerepos"),
     )
     monkeypatch.setattr(declared, "load", lambda: with_jobs)
@@ -238,7 +407,9 @@ def _with_jobs(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN202
     return with_jobs
 
 
-def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Each job is the command that runs it; ``migrate`` says which it includes, and is the one that prepares."""
     _with_jobs(monkeypatch)
     assert cli.main(["describe"]) == 0
@@ -246,14 +417,27 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(monkeypatch: pyt
     said = json.loads(capsys.readouterr().out)
     assert said["prepare"] == "migrate"
     assert said["jobs"]["migrate"]["includes"] == ["ensureadmin", "ensurerepos"]
-    assert said["jobs"]["ensureadmin"] == {"command": ["arkitekt-service", "run", "ensureadmin"], "summary": "Create the operator account", "includes": []}
+    assert said["jobs"]["ensureadmin"] == {
+        "command": ["arkitekt-service", "run", "ensureadmin"],
+        "summary": "Create the operator account",
+        "includes": [],
+    }
     # `plan` is every service's.
-    assert set(said["jobs"]) == {"migrate", "plan", "superuser", "ensureadmin", "ensurerepos", "reindex"}
+    assert set(said["jobs"]) == {
+        "migrate",
+        "plan",
+        "superuser",
+        "ensureadmin",
+        "ensurerepos",
+        "reindex",
+    }
     assert said["jobs"]["plan"]["command"] == ["arkitekt-service", "run", "plan"]
     assert said["render"] == ["arkitekt-service", "render"]
 
 
-def test_whoever_starts_the_image_by_hand_is_told_what_to_run_instead(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_whoever_starts_the_image_by_hand_is_told_what_to_run_instead(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`describe` is the image's own command. An installer reads stdout, which stays the
     description and nothing else; a person reads the note beside it."""
     _with_jobs(monkeypatch)
@@ -262,14 +446,23 @@ def test_whoever_starts_the_image_by_hand_is_told_what_to_run_instead(monkeypatc
     printed = capsys.readouterr()
     assert json.loads(printed.out)["name"] == "example"
     note = printed.err
-    assert "an installer such as konstruktor" in note and "Nothing is being served" in note
+    assert (
+        "an installer such as konstruktor" in note and "Nothing is being served" in note
+    )
     # The one thing most people want comes first; then the steps an installer takes.
-    assert note.index("arkitekt-service standalone") < note.index("arkitekt-service run migrate")
+    assert note.index("arkitekt-service standalone") < note.index(
+        "arkitekt-service run migrate"
+    )
     assert "arkitekt-service serve" in note and "arkitekt-service debug" in note
-    assert "arkitekt-service run ensureadmin" in note and "Create the operator account" in note
+    assert (
+        "arkitekt-service run ensureadmin" in note
+        and "Create the operator account" in note
+    )
 
 
-def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     _with_jobs(monkeypatch)
     ran: list[list[str]] = []
     monkeypatch.setattr(cli, "manage", lambda *step: ran.append(list(step)) or 0)
@@ -279,17 +472,24 @@ def test_a_job_is_run_by_its_name_with_what_was_passed_after_it(monkeypatch: pyt
     assert cli.main(["run", "plan"]) == 0
     # The account's name and password come from the environment, never from here.
     assert cli.main(["run", "superuser"]) == 0
-    assert ran == [["ensurerepos", "--quiet"], ["reindex", "--since", "2026-01-01"], ["migrate", "--plan"], ["createsuperuser", "--noinput"]]
+    assert ran == [
+        ["ensurerepos", "--quiet"],
+        ["reindex", "--since", "2026-01-01"],
+        ["migrate", "--plan"],
+        ["createsuperuser", "--noinput"],
+    ]
 
     assert cli.main(["run", "nope"]) == cli.REFUSED
-    assert "migrate, plan, superuser, ensureadmin, ensurerepos, reindex" in capsys.readouterr().err
+    assert (
+        "migrate, plan, superuser, ensureadmin, ensurerepos, reindex"
+        in capsys.readouterr().err
+    )
 
 
 def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
     import dataclasses
 
     from arkitekt_service.contract import Job
-
     from tests.contract import example
 
     with pytest.raises(ValueError, match="ensureadmin"):
@@ -299,7 +499,9 @@ def test_a_setup_can_only_name_jobs_the_service_declares() -> None:
             dataclasses.replace(example.contract, jobs={reserved: Job((reserved,))})
 
 
-def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: Path) -> None:
+def test_the_command_finds_the_service_in_the_directory_it_is_run_in(
+    tmp_path: Path,
+) -> None:
     """As it is run in an image: the installed command, in the service's own directory, which
     is on nobody's path. `python -m` would find the service there by itself; a command has to
     look."""
@@ -316,27 +518,56 @@ def test_the_command_finds_the_service_in_the_directory_it_is_run_in(tmp_path: P
         "contract = Contract(description=Description(name='elsewhere', identifier='live.arkitekt.elsewhere'), settings=Settings, render=lambda facts: {},\n"
         "    serve=Start(('echo', 'serving', 'elsewhere')), debug=Start(('echo', 'debugging')))\n"
     )
-    environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
-    ran = subprocess.run([command, "describe"], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+    environment = {
+        key: value for key, value in os.environ.items() if key != "PYTHONPATH"
+    }
+    ran = subprocess.run(
+        [command, "describe"],
+        cwd=tmp_path,
+        env={**environment, "ARKITEKT_SERVICE": "somewhere_else"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
     assert ran.returncode == 0, ran.stderr
     assert json.loads(ran.stdout)["name"] == "elsewhere"
     assert "Nothing is being served" in ran.stderr
 
     # With no verb at all it says what it is too: that is what an image's own command relies on.
-    bare = subprocess.run([command], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+    bare = subprocess.run(
+        [command],
+        cwd=tmp_path,
+        env={**environment, "ARKITEKT_SERVICE": "somewhere_else"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert json.loads(bare.stdout)["name"] == "elsewhere"
 
     # And `serve` becomes what the service declared: this process is replaced by it.
-    served = subprocess.run([command, "serve"], cwd=tmp_path, env={**environment, "ARKITEKT_SERVICE": "somewhere_else"}, capture_output=True, text=True, check=False)
+    served = subprocess.run(
+        [command, "serve"],
+        cwd=tmp_path,
+        env={**environment, "ARKITEKT_SERVICE": "somewhere_else"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert served.stdout.strip() == "serving elsewhere"
 
 
-def test_serve_and_debug_become_what_the_service_declared(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serve_and_debug_become_what_the_service_declared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Nothing is prepared on the way: starting is one thing, preparing another."""
     became: list[object] = []
     monkeypatch.setattr(cli, "become", lambda start: became.append(start) or 0)
-    monkeypatch.setattr(cli, "manage", lambda *step: pytest.fail(f"`{step}` ran before the service was started"))
+    monkeypatch.setattr(
+        cli,
+        "manage",
+        lambda *step: pytest.fail(f"`{step}` ran before the service was started"),
+    )
 
     assert cli.main(["serve"]) == 0
     assert cli.main(["debug"]) == 0
@@ -349,20 +580,34 @@ def test_standalone_prepares_and_then_serves(monkeypatch: pytest.MonkeyPatch) ->
     _with_jobs(monkeypatch)
     did: list[str] = []
     monkeypatch.setattr(cli, "manage", lambda *step: did.append(step[0]) or 0)
-    monkeypatch.setattr(cli, "become", lambda start: did.append(f"became {start.command[0]}") or 0)
+    monkeypatch.setattr(
+        cli, "become", lambda start: did.append(f"became {start.command[0]}") or 0
+    )
 
     assert cli.main(["standalone"]) == 0
-    assert did == ["wait_for_database", "migrate", "ensureadmin", "ensurerepos", "became daphne"]
+    assert did == [
+        "wait_for_database",
+        "migrate",
+        "ensureadmin",
+        "ensurerepos",
+        "became daphne",
+    ]
 
     did.clear()
     assert cli.main(["standalone", "--debug"]) == 0
     assert did[-1] == "became python"
 
 
-def test_standalone_serves_nothing_on_a_database_it_could_not_prepare(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_standalone_serves_nothing_on_a_database_it_could_not_prepare(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _with_jobs(monkeypatch)
     monkeypatch.setattr(cli, "manage", lambda *step: 3 if step[0] == "migrate" else 0)
-    monkeypatch.setattr(cli, "become", lambda start: pytest.fail("served on a database that was not prepared"))
+    monkeypatch.setattr(
+        cli,
+        "become",
+        lambda start: pytest.fail("served on a database that was not prepared"),
+    )
 
     assert cli.main(["standalone"]) == 3
 
@@ -372,10 +617,14 @@ def test_a_service_has_one_database_unless_it_names_others() -> None:
 
     assert Needs().databases == ["main"]
     assert Needs(databases=["main", "events"]).databases == ["main", "events"]
-    assert Needs(databases=[]).databases == [], "a service that keeps nothing in Postgres"
+    assert Needs(databases=[]).databases == [], (
+        "a service that keeps nothing in Postgres"
+    )
 
 
-@pytest.mark.parametrize("name", ["Main", "my-db", "1st", "with space", 'drop"table', "", "ümlaut", "a" * 64])
+@pytest.mark.parametrize(
+    "name", ["Main", "my-db", "1st", "with space", 'drop"table', "", "ümlaut", "a" * 64]
+)
 def test_a_database_name_postgres_would_have_to_quote_is_refused(name: str) -> None:
     from arkitekt_service.contract import Needs
 
@@ -393,7 +642,20 @@ def test_a_database_cannot_be_named_twice() -> None:
 def test_a_block_is_written_for_the_database_asked_for_by_name() -> None:
     from arkitekt_service.contract import Facts, Refused, blocks
 
-    facts = Facts.model_validate({**FACTS, "databases": {**FACTS["databases"], "events": {"host": "db", "name": "example_events", "username": "hub", "password": "pw"}}})
+    facts = Facts.model_validate(
+        {
+            **FACTS,
+            "databases": {
+                **FACTS["databases"],
+                "events": {
+                    "host": "db",
+                    "name": "example_events",
+                    "username": "hub",
+                    "password": "pw",
+                },
+            },
+        }
+    )
     assert blocks.postgres(facts)["db_name"] == "example_main"
     assert blocks.postgres(facts, "events")["db_name"] == "example_events"
     with pytest.raises(Refused, match="called `archive`"):
@@ -406,44 +668,76 @@ def test_a_service_is_not_named_what_postgres_would_have_to_quote(name: str) -> 
 
     with pytest.raises(ValueError, match="cannot be a service's name"):
         Description(name=name, identifier="live.arkitekt.example")
-    assert Description(name="omero_ark", identifier="live.arkitekt.omero_ark").name == "omero_ark"
+    assert (
+        Description(name="omero_ark", identifier="live.arkitekt.omero_ark").name
+        == "omero_ark"
+    )
 
 
 def test_a_database_is_called_after_its_service_and_has_to_fit() -> None:
     from arkitekt_service.contract import Description, Needs
 
     with pytest.raises(ValueError, match="longer than the 63"):
-        Description(name="s" * 40, identifier="live.arkitekt.long", needs=Needs(databases=["d" * 30]))
+        Description(
+            name="s" * 40,
+            identifier="live.arkitekt.long",
+            needs=Needs(databases=["d" * 30]),
+        )
 
 
-def test_the_description_says_where_the_code_came_from_as_the_build_said(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_description_says_where_the_code_came_from_as_the_build_said(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from arkitekt_service.contract import Source
     from arkitekt_service.contract.contract import load
 
     contract = load()
-    assert contract.said().source is None, "an image whose build said nothing cannot be run from a checkout unasked"
+    assert contract.said().source is None, (
+        "an image whose build said nothing cannot be run from a checkout unasked"
+    )
 
-    monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example")
+    monkeypatch.setenv(
+        "ARKITEKT_SOURCE_REPOSITORY", "https://github.com/arkitektio/example"
+    )
     monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "0123abc")
-    assert contract.said().source == Source(repository="https://github.com/arkitektio/example", revision="0123abc", path="/workspace")
+    assert contract.said().source == Source(
+        repository="https://github.com/arkitektio/example",
+        revision="0123abc",
+        path="/workspace",
+    )
 
 
-def test_a_contract_names_the_repository_a_local_build_does_not(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_contract_names_the_repository_a_local_build_does_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import dataclasses
 
     from arkitekt_service.contract import Source
     from arkitekt_service.contract.contract import load
 
     contract = load()
-    declared = dataclasses.replace(contract, description=contract.description.model_copy(update={"source": Source(repository="https://example.org/mine", path="/srv/app")}))
-    assert declared.said().source == Source(repository="https://example.org/mine", path="/srv/app")
+    declared = dataclasses.replace(
+        contract,
+        description=contract.description.model_copy(
+            update={
+                "source": Source(repository="https://example.org/mine", path="/srv/app")
+            }
+        ),
+    )
+    assert declared.said().source == Source(
+        repository="https://example.org/mine", path="/srv/app"
+    )
 
     monkeypatch.setenv("ARKITEKT_SOURCE_REVISION", "0123abc")
     monkeypatch.setenv("ARKITEKT_SOURCE_REPOSITORY", "https://github.com/a/fork")
-    assert declared.said().source == Source(repository="https://github.com/a/fork", revision="0123abc", path="/srv/app")
+    assert declared.said().source == Source(
+        repository="https://github.com/a/fork", revision="0123abc", path="/srv/app"
+    )
 
 
-def test_what_a_service_hosts_is_part_of_what_its_image_says(capsys: pytest.CaptureFixture[str]) -> None:
+def test_what_a_service_hosts_is_part_of_what_its_image_says(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert cli.main(["describe"]) == 0
     said = json.loads(capsys.readouterr().out)
     assert said["hosts"] == {"structures": [], "signals": []}
@@ -452,16 +746,28 @@ def test_what_a_service_hosts_is_part_of_what_its_image_says(capsys: pytest.Capt
 
 SCOPES = [
     Scope(key="pair_read", description="See the pairs you made."),
-    Scope(key="pair_all", description="Do everything with pairs on your behalf.", is_all_scope=True),
+    Scope(
+        key="pair_all",
+        description="Do everything with pairs on your behalf.",
+        is_all_scope=True,
+    ),
 ]
 ROLES = [
-    Role(key="pair_admin", description="Full control of pairs in this organization.", is_admin_role=True),
+    Role(
+        key="pair_admin",
+        description="Full control of pairs in this organization.",
+        is_admin_role=True,
+    ),
     Role(key="pair_editor", description="Make and change pairs.", is_default_role=True),
 ]
 
 
 def test_a_service_says_which_scope_and_role_stand_for_all_of_it() -> None:
-    said = Description(name="pair", identifier="live.arkitekt.pair", needs=Needs(scopes=SCOPES, roles=ROLES))
+    said = Description(
+        name="pair",
+        identifier="live.arkitekt.pair",
+        needs=Needs(scopes=SCOPES, roles=ROLES),
+    )
     assert (said.all_scope, said.admin_role) == ("pair_all", "pair_admin")
     assert Description(name="pair", identifier="live.arkitekt.pair").all_scope is None
 
@@ -469,16 +775,64 @@ def test_a_service_says_which_scope_and_role_stand_for_all_of_it() -> None:
 @pytest.mark.parametrize(
     ("needs", "complaint"),
     [
-        (Needs(scopes=[Scope(key="read", description="See the pairs you made.", is_all_scope=True)]), "is not pair's"),
-        (Needs(scopes=[Scope(key="other_all", description="Do everything with pairs.", is_all_scope=True)]), "is not pair's"),
+        (
+            Needs(
+                scopes=[
+                    Scope(
+                        key="read",
+                        description="See the pairs you made.",
+                        is_all_scope=True,
+                    )
+                ]
+            ),
+            "is not pair's",
+        ),
+        (
+            Needs(
+                scopes=[
+                    Scope(
+                        key="other_all",
+                        description="Do everything with pairs.",
+                        is_all_scope=True,
+                    )
+                ]
+            ),
+            "is not pair's",
+        ),
         (Needs(scopes=SCOPES[:1]), "exactly one of them is its all-scope"),
-        (Needs(scopes=[*SCOPES, Scope(key="pair_everything", description="Do everything else as well.", is_all_scope=True)]), "exactly one of them is its all-scope"),
+        (
+            Needs(
+                scopes=[
+                    *SCOPES,
+                    Scope(
+                        key="pair_everything",
+                        description="Do everything else as well.",
+                        is_all_scope=True,
+                    ),
+                ]
+            ),
+            "exactly one of them is its all-scope",
+        ),
         (Needs(roles=ROLES[1:]), "exactly one of them is its admin role"),
-        (Needs(roles=[*ROLES, Role(key="pair_member", description="Look at pairs and comment.", is_default_role=True)]), "more than one role every member holds"),
+        (
+            Needs(
+                roles=[
+                    *ROLES,
+                    Role(
+                        key="pair_member",
+                        description="Look at pairs and comment.",
+                        is_default_role=True,
+                    ),
+                ]
+            ),
+            "more than one role every member holds",
+        ),
         (Needs(scopes=[*SCOPES, SCOPES[0]]), "declared twice"),
     ],
 )
-def test_scopes_and_roles_are_the_services_own_with_one_catch_all_each(needs: Needs, complaint: str) -> None:
+def test_scopes_and_roles_are_the_services_own_with_one_catch_all_each(
+    needs: Needs, complaint: str
+) -> None:
     with pytest.raises(ValidationError, match=complaint):
         Description(name="pair", identifier="live.arkitekt.pair", needs=needs)
 
@@ -493,4 +847,9 @@ def test_a_scope_or_role_is_described_in_a_sentence(description: str) -> None:
 
 def test_a_role_cannot_be_the_admin_role_and_every_members() -> None:
     with pytest.raises(ValidationError, match="cannot be both"):
-        Role(key="pair_admin", description="Full control of pairs.", is_admin_role=True, is_default_role=True)
+        Role(
+            key="pair_admin",
+            description="Full control of pairs.",
+            is_admin_role=True,
+            is_default_role=True,
+        )

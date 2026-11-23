@@ -49,7 +49,15 @@ class FeedReader:
     _client_lock = threading.Lock()
     _client: httpx.Client | None = None
 
-    def __init__(self, *, url: str, producer: str, feed: str, issuer: str, key: OKPKey | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        url: str,
+        producer: str,
+        feed: str,
+        issuer: str,
+        key: OKPKey | None = None,
+    ) -> None:
         self.url = url
         #: What the reader signs with: this instance's key unless given (one process playing several instances: tests).
         self.key = key
@@ -68,9 +76,31 @@ class FeedReader:
 
     def page(self, organization: str, after: Cursor, limit: int = 1000) -> RemotePage:
         """The entries of ``organization`` after ``after``. Raises on any answer but a page."""
-        body = json.dumps({"feed": self.feed, "organization": organization, "after": {"xid": str(after.xid), "id": after.id}, "limit": limit}).encode()
-        authorization = trust.sign("POST", urlparse(self.url).path, body, issuer=self.issuer, audience=self.producer, key=self.key)
-        response = self.client().post(self.url, content=body, headers={"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()})
+        body = json.dumps(
+            {
+                "feed": self.feed,
+                "organization": organization,
+                "after": {"xid": str(after.xid), "id": after.id},
+                "limit": limit,
+            }
+        ).encode()
+        authorization = trust.sign(
+            "POST",
+            urlparse(self.url).path,
+            body,
+            issuer=self.issuer,
+            audience=self.producer,
+            key=self.key,
+        )
+        response = self.client().post(
+            self.url,
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": authorization,
+                **telemetry.headers(),
+            },
+        )
         response.raise_for_status()
         answer = response.json()
         return RemotePage(

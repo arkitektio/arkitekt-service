@@ -9,7 +9,11 @@ import os
 SECRET_KEY = "arkitekt-telemetry-tests"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
-INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "arkitekt_service.server"]
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "arkitekt_service.server",
+]
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",

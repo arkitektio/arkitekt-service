@@ -62,7 +62,16 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from arkitekt_service.contract.contract import LABEL, MIGRATE, PLAN, SUPERUSER, Contract, Refused, Start, load
+from arkitekt_service.contract.contract import (
+    LABEL,
+    MIGRATE,
+    PLAN,
+    SUPERUSER,
+    Contract,
+    Refused,
+    Start,
+    load,
+)
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
@@ -102,7 +111,10 @@ def _document(path: Path, what: str) -> dict[str, JSON]:
 
 
 def _errors(error: ValidationError) -> list[str]:
-    return [f"{'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}" for problem in error.errors()]
+    return [
+        f"{'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}"
+        for problem in error.errors()
+    ]
 
 
 def judge(contract: Contract, document: dict[str, JSON]) -> None:
@@ -122,7 +134,9 @@ def judge(contract: Contract, document: dict[str, JSON]) -> None:
         try:
             contract.settings()
         except ValidationError as error:
-            raise No("this release cannot start on that config", _errors(error)) from error
+            raise No(
+                "this release cannot start on that config", _errors(error)
+            ) from error
         finally:
             if before is None:
                 del os.environ[CONFIG_FILE]
@@ -135,11 +149,15 @@ def render(contract: Contract, facts: Path, overrides: Path) -> dict[str, JSON]:
     try:
         said = Facts.model_validate(_document(facts, "the hub's facts"))
     except ValidationError as error:
-        raise No("this release does not understand the hub's facts", _errors(error)) from error
+        raise No(
+            "this release does not understand the hub's facts", _errors(error)
+        ) from error
     try:
         document = contract.render(said)
     except Refused as error:
-        raise No("this release cannot be configured for this hub", [str(error)]) from error
+        raise No(
+            "this release cannot be configured for this hub", [str(error)]
+        ) from error
     if overrides.is_file():
         document = merge(document, _document(overrides, "what the operator set"))
     judge(contract, document)
@@ -176,7 +194,11 @@ def prepare(contract: Contract) -> int:
     none of it. It waits until the database takes a connection and no longer. Stops at the
     first step that fails, with that step's exit code.
     """
-    steps: list[tuple[str, ...]] = [("wait_for_database", "-s", "0"), ("migrate", "--noinput"), *(contract.jobs[name].manage for name in contract.setup)]
+    steps: list[tuple[str, ...]] = [
+        ("wait_for_database", "-s", "0"),
+        ("migrate", "--noinput"),
+        *(contract.jobs[name].manage for name in contract.setup),
+    ]
     for step in steps:
         print(f"=> manage.py {' '.join(step)}", flush=True)
         code = manage(*step)
@@ -237,31 +259,64 @@ def notice(said: Description) -> None:
         "Or one step at a time, as an installer does:",
         "",
     ]
-    lines += [f"  {shlex.join(job.command):<36}  {job.summary}".rstrip() for job in said.jobs.values()]
+    lines += [
+        f"  {shlex.join(job.command):<36}  {job.summary}".rstrip()
+        for job in said.jobs.values()
+    ]
     lines.append(f"  {shlex.join(said.serve):<36}  Serve, and nothing else.")
-    lines.append(f"  {shlex.join(said.debug):<36}  The same, with the development server.")
-    lines += ["", "Each needs the service's config at /workspace/config.yaml, which an installer writes too.", ""]
+    lines.append(
+        f"  {shlex.join(said.debug):<36}  The same, with the development server."
+    )
+    lines += [
+        "",
+        "Each needs the service's config at /workspace/config.yaml, which an installer writes too.",
+        "",
+    ]
     print("\n".join(lines), file=sys.stderr)
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one verb; the exit code is its answer."""
-    parser = argparse.ArgumentParser(prog="arkitekt-service", description="What this service's image answers a hub's installer.")
+    parser = argparse.ArgumentParser(
+        prog="arkitekt-service",
+        description="What this service's image answers a hub's installer.",
+    )
     verbs = parser.add_subparsers(dest="verb")
-    verbs.add_parser("describe", help="What the service is, needs and offers, and what to run in its image, as JSON. The default.")
-    verbs.add_parser("label", help="The description as an image label, for a build to stamp into the image.")
-    rendering = verbs.add_parser("render", help="This release's config, from a hub's facts.")
+    verbs.add_parser(
+        "describe",
+        help="What the service is, needs and offers, and what to run in its image, as JSON. The default.",
+    )
+    verbs.add_parser(
+        "label",
+        help="The description as an image label, for a build to stamp into the image.",
+    )
+    rendering = verbs.add_parser(
+        "render", help="This release's config, from a hub's facts."
+    )
     rendering.add_argument("--facts", type=Path, default=Path(FACTS))
     rendering.add_argument("--overrides", type=Path, default=Path(OVERRIDES))
-    checking = verbs.add_parser("check", help="Whether this release reads a config as written.")
+    checking = verbs.add_parser(
+        "check", help="Whether this release reads a config as written."
+    )
     checking.add_argument("--config", type=Path, default=None)
     verbs.add_parser("serve", help="Serve, and nothing else.")
-    verbs.add_parser("debug", help="Serve with the development server, and nothing else.")
-    running = verbs.add_parser("run", help="One of the service's jobs, by name: migrate, plan, and its own.")
+    verbs.add_parser(
+        "debug", help="Serve with the development server, and nothing else."
+    )
+    running = verbs.add_parser(
+        "run", help="One of the service's jobs, by name: migrate, plan, and its own."
+    )
     running.add_argument("name")
-    running.add_argument("extra", nargs=argparse.REMAINDER, help="Passed on to the job.")
-    alone = verbs.add_parser("standalone", help="Prepare the database, then serve: one image, run on its own.")
-    alone.add_argument("--debug", action="store_true", help="Serve with the development server.")
+    running.add_argument(
+        "extra", nargs=argparse.REMAINDER, help="Passed on to the job."
+    )
+    alone = verbs.add_parser(
+        "standalone",
+        help="Prepare the database, then serve: one image, run on its own.",
+    )
+    alone.add_argument(
+        "--debug", action="store_true", help="Serve with the development server."
+    )
     asked = parser.parse_args(arguments)
 
     # The service is the code in the working directory: its contract's module and its
@@ -281,7 +336,10 @@ def main(arguments: Sequence[str] | None = None) -> int:
         elif verb == "render":
             facts: Path = asked.facts  # pyright: ignore[reportAny]
             overrides: Path = asked.overrides  # pyright: ignore[reportAny]
-            print(yaml.safe_dump(render(contract, facts, overrides), sort_keys=False), end="")
+            print(
+                yaml.safe_dump(render(contract, facts, overrides), sort_keys=False),
+                end="",
+            )
         elif verb == "check":
             given: Path | None = asked.config  # pyright: ignore[reportAny]
             path = given or Path(os.environ.get(CONFIG_FILE, "config.yaml"))

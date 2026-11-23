@@ -28,7 +28,11 @@ class Command(BaseCommand):
     requires_migrations_checks = True
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument("--all", action="store_true", help="Describe every row again, not only those missing a key")
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help="Describe every row again, not only those missing a key",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         # The services this process serves are the ones its URLconf mounts.
@@ -39,6 +43,8 @@ class Command(BaseCommand):
                     continue
                 rows = structure.model._default_manager.all()
                 if not options["all"]:
-                    rows = rows.filter(~Q(stored_descriptors__has_keys=list(structure.keys)))
+                    rows = rows.filter(
+                        ~Q(stored_descriptors__has_keys=list(structure.keys))
+                    )
                 changed = service.restore(rows.order_by("pk"), emit=False)
                 self.stdout.write(f"{structure.identifier}: {changed} restored")

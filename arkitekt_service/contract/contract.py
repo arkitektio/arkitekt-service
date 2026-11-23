@@ -74,7 +74,9 @@ class Start:
 
     command: tuple[str, ...]
     """The program and its arguments: ``("daphne", "-b", "0.0.0.0", "-p", "80", "mikro_server.asgi:application")``."""
-    environment: Mapping[str, str] = dataclasses.field(default_factory=lambda: dict[str, str]())
+    environment: Mapping[str, str] = dataclasses.field(
+        default_factory=lambda: dict[str, str]()
+    )
     """What it is started with beside the container's own environment."""
 
 
@@ -91,7 +93,9 @@ class Contract:
     """What serves, and does nothing else (``arkitekt-service serve``)."""
     debug: Start
     """The same for development: the server that reloads on a change (``arkitekt-service debug``)."""
-    jobs: Mapping[str, Job] = dataclasses.field(default_factory=lambda: dict[str, Job]())
+    jobs: Mapping[str, Job] = dataclasses.field(
+        default_factory=lambda: dict[str, Job]()
+    )
     """What can be run in the image beside its start, by name: ``{"ensureadmin": Job(("ensureadmin",),
     "Create the operator account")}``."""
     setup: tuple[str, ...] = ()
@@ -102,10 +106,14 @@ class Contract:
         """A setup that names a job nobody declared is refused where it is written."""
         taken = [name for name in RESERVED if name in self.jobs]
         if taken:
-            raise ValueError(f"{', '.join(taken)} is every service's own job: it cannot be declared again")
+            raise ValueError(
+                f"{', '.join(taken)} is every service's own job: it cannot be declared again"
+            )
         unknown = [name for name in self.setup if name not in self.jobs]
         if unknown:
-            raise ValueError(f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job")
+            raise ValueError(
+                f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job"
+            )
 
     def _source(self) -> described.Source | None:
         return _built_from(self.description.source)
@@ -125,12 +133,18 @@ class Contract:
                 summary="Wait for the database, apply this release's migrations, then run the service's setup.",
                 includes=list(self.setup),
             ),
-            PLAN: described.Job(command=[*runner, "run", PLAN], summary="List the migrations `migrate` would apply, and apply nothing."),
+            PLAN: described.Job(
+                command=[*runner, "run", PLAN],
+                summary="List the migrations `migrate` would apply, and apply nothing.",
+            ),
             SUPERUSER: described.Job(
                 command=[*runner, "run", SUPERUSER],
                 summary="Create an account for the service's admin, from DJANGO_SUPERUSER_USERNAME, _PASSWORD and _EMAIL.",
             ),
-            **{name: described.Job(command=[*runner, "run", name], summary=job.summary) for name, job in self.jobs.items()},
+            **{
+                name: described.Job(command=[*runner, "run", name], summary=job.summary)
+                for name, job in self.jobs.items()
+            },
         }
         return self.description.model_copy(
             update={
@@ -146,18 +160,28 @@ class Contract:
 
 def _built_from(declared: described.Source | None) -> described.Source | None:
     """The source as the build says it, over what the contract declares for a build that says nothing."""
-    repository = os.environ.get(SOURCE_REPOSITORY) or (declared.repository if declared else None)
+    repository = os.environ.get(SOURCE_REPOSITORY) or (
+        declared.repository if declared else None
+    )
     if not repository:
         return None
-    revision = os.environ.get(SOURCE_REVISION) or (declared.revision if declared else None)
-    return described.Source(repository=repository, revision=revision or None, **({"path": declared.path} if declared else {}))
+    revision = os.environ.get(SOURCE_REVISION) or (
+        declared.revision if declared else None
+    )
+    return described.Source(
+        repository=repository,
+        revision=revision or None,
+        **({"path": declared.path} if declared else {}),
+    )
 
 
 def load() -> Contract:
     """The contract of the service this image is, as ``ARKITEKT_SERVICE`` names its module."""
     module = os.environ.get(ENVIRONMENT)
     if not module:
-        raise LookupError(f"{ENVIRONMENT} is not set: this image does not say where its contract is")
+        raise LookupError(
+            f"{ENVIRONMENT} is not set: this image does not say where its contract is"
+        )
     declared: object = getattr(importlib.import_module(module), "contract", None)
     if not isinstance(declared, Contract):
         raise TypeError(f"{module} has no `contract`")

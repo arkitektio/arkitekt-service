@@ -13,5 +13,13 @@ class SpacesConfig(AppConfig):
         from arkitekt_service.collaborations.guests import changed
         from arkitekt_service.collaborations.models import CollaborationItem
 
-        post_save.connect(changed, sender=CollaborationItem, dispatch_uid="arkitekt-collaborations-changed-save")
-        post_delete.connect(changed, sender=CollaborationItem, dispatch_uid="arkitekt-collaborations-changed-delete")
+        post_save.connect(
+            changed,
+            sender=CollaborationItem,
+            dispatch_uid="arkitekt-collaborations-changed-save",
+        )
+        post_delete.connect(
+            changed,
+            sender=CollaborationItem,
+            dispatch_uid="arkitekt-collaborations-changed-delete",
+        )

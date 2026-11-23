@@ -65,7 +65,9 @@ class Identified:
 def _model_of(graphql_type: Any) -> Any:
     """The Django model a strawberry-django type is made from, if any."""
     definition = (getattr(graphql_type, "extensions", None) or {}).get(DEFINITION)
-    django = getattr(getattr(definition, "origin", None), "__strawberry_django_definition__", None)
+    django = getattr(
+        getattr(definition, "origin", None), "__strawberry_django_definition__", None
+    )
     return getattr(django, "model", None)
 
 
@@ -104,11 +106,21 @@ def scope_gaps(schema: Any) -> list[str]:
             if name.startswith("_"):
                 continue
             definition = (field.extensions or {}).get(DEFINITION)
-            auths = [d for d in getattr(definition, "directives", None) or () if isinstance(d, Auth)]
-            required = [scope for auth in auths for scope in (auth.required_scopes or ())]
+            auths = [
+                d
+                for d in getattr(definition, "directives", None) or ()
+                if isinstance(d, Auth)
+            ]
+            required = [
+                scope for auth in auths for scope in (auth.required_scopes or ())
+            ]
             if not required:
                 gaps.append(f"{root.name}.{name} asks for no scope")
-            gaps.extend(f"{root.name}.{name} asks for `{scope}`, which the contract does not declare" for scope in required if scope not in declared)
+            gaps.extend(
+                f"{root.name}.{name} asks for `{scope}`, which the contract does not declare"
+                for scope in required
+                if scope not in declared
+            )
     return gaps
 
 
@@ -119,17 +131,32 @@ def annotate_schema(schema: Any, service: Any) -> Any:
     _declare_catch_alls()
     core: GraphQLSchema = schema._schema
     for graphql_type in core.type_map.values():
-        if not isinstance(graphql_type, GraphQLObjectType) or graphql_type.name.startswith("__"):
+        if not isinstance(
+            graphql_type, GraphQLObjectType
+        ) or graphql_type.name.startswith("__"):
             continue
-        model, definition = _model_of(graphql_type), (graphql_type.extensions or {}).get(DEFINITION)
+        model, definition = (
+            _model_of(graphql_type),
+            (graphql_type.extensions or {}).get(DEFINITION),
+        )
         if model is None or definition is None:
             continue
         structure = service.structure_for(model)
-        if structure is None or any(isinstance(d, Identified) for d in definition.directives or ()):
+        if structure is None or any(
+            isinstance(d, Identified) for d in definition.directives or ()
+        ):
             continue
-        definition.directives = [*(definition.directives or ()), Identified(by=structure.identifier)]
+        definition.directives = [
+            *(definition.directives or ()),
+            Identified(by=structure.identifier),
+        ]
     extensions = getattr(schema, "extensions", ()) or ()
-    if any(e is CollaborationGate or (isinstance(e, type) and issubclass(e, CollaborationGate)) or isinstance(e, CollaborationGate) for e in extensions):
+    if any(
+        e is CollaborationGate
+        or (isinstance(e, type) and issubclass(e, CollaborationGate))
+        or isinstance(e, CollaborationGate)
+        for e in extensions
+    ):
         service.share()
     return schema
 
@@ -143,35 +170,68 @@ def _relates(schema: GraphQLSchema, graphql_type: Any) -> bool:
         return False
     if isinstance(graphql_type, GraphQLObjectType):
         return _model_of(graphql_type) is not None
-    return any(_model_of(possible) is not None for possible in schema.get_possible_types(graphql_type))
+    return any(
+        _model_of(possible) is not None
+        for possible in schema.get_possible_types(graphql_type)
+    )
 
 
 def _opted_in(field: Any) -> bool:
     definition = (field.extensions or {}).get(DEFINITION)
-    return any(getattr(e, "allow_scoped", False) for e in getattr(definition, "extensions", None) or ())
+    return any(
+        getattr(e, "allow_scoped", False)
+        for e in getattr(definition, "extensions", None) or ()
+    )
 
 
-def _root_fields(selection_set: SelectionSetNode, fragments: dict[str, FragmentDefinitionNode], seen: frozenset[str] = frozenset()) -> Iterator[FieldNode]:
+def _root_fields(
+    selection_set: SelectionSetNode,
+    fragments: dict[str, FragmentDefinitionNode],
+    seen: frozenset[str] = frozenset(),
+) -> Iterator[FieldNode]:
     for selection in selection_set.selections:
         if isinstance(selection, FieldNode):
             yield selection
         elif isinstance(selection, InlineFragmentNode):
             yield from _root_fields(selection.selection_set, fragments, seen)
-        elif isinstance(selection, FragmentSpreadNode) and selection.name.value not in seen:
+        elif (
+            isinstance(selection, FragmentSpreadNode)
+            and selection.name.value not in seen
+        ):
             fragment = fragments.get(selection.name.value)
             if fragment is not None:
-                yield from _root_fields(fragment.selection_set, fragments, seen | {selection.name.value})
+                yield from _root_fields(
+                    fragment.selection_set, fragments, seen | {selection.name.value}
+                )
 
 
-def closed_roots(schema: GraphQLSchema, document: Any, operation_name: str | None) -> list[str]:
+def closed_roots(
+    schema: GraphQLSchema, document: Any, operation_name: str | None
+) -> list[str]:
     """The root fields of a query a guest may not enter at: those handing out no objects, not opted in."""
     operation = next(
-        (d for d in document.definitions if isinstance(d, OperationDefinitionNode) and (operation_name is None or (d.name is not None and d.name.value == operation_name))),
+        (
+            d
+            for d in document.definitions
+            if isinstance(d, OperationDefinitionNode)
+            and (
+                operation_name is None
+                or (d.name is not None and d.name.value == operation_name)
+            )
+        ),
         None,
     )
-    if operation is None or operation.operation != OperationType.QUERY or schema.query_type is None:
+    if (
+        operation is None
+        or operation.operation != OperationType.QUERY
+        or schema.query_type is None
+    ):
         return []
-    fragments = {d.name.value: d for d in document.definitions if isinstance(d, FragmentDefinitionNode)}
+    fragments = {
+        d.name.value: d
+        for d in document.definitions
+        if isinstance(d, FragmentDefinitionNode)
+    }
     closed = []
     for node in _root_fields(operation.selection_set, fragments):
         name = node.name.value
@@ -217,22 +277,37 @@ def _held(value: Any, guest: Any, parent: Any = None) -> Any:
     if isinstance(value, QuerySet):
         value = list(value)
     if isinstance(value, (list, tuple)):
-        return [item for item in value if not isinstance(item, Model) or _shown(item, guest, parent)]
+        return [
+            item
+            for item in value
+            if not isinstance(item, Model) or _shown(item, guest, parent)
+        ]
     return value
 
 
 def _hands_out_objects(value: Any) -> bool:
     if isinstance(value, (Model, QuerySet)):
         return True
-    return isinstance(value, (list, tuple)) and any(isinstance(item, Model) for item in value)
+    return isinstance(value, (list, tuple)) and any(
+        isinstance(item, Model) for item in value
+    )
 
 
 def _known(value: Any, guest: Any, parent: Any = None) -> bool:
     """Whether holding ``value`` reads nothing: every model in it (or, for an identity, what it is attached to) was read for the guest already."""
     if isinstance(value, QuerySet):
         return False
-    items = [item for item in (value if isinstance(value, (list, tuple)) else [value]) if isinstance(item, Model)]
-    if any(_identity(item) for item in items) and isinstance(parent, Model) and not _identity(parent) and not guest.knows(type(parent)):
+    items = [
+        item
+        for item in (value if isinstance(value, (list, tuple)) else [value])
+        if isinstance(item, Model)
+    ]
+    if (
+        any(_identity(item) for item in items)
+        and isinstance(parent, Model)
+        and not _identity(parent)
+        and not guest.knows(type(parent))
+    ):
         return False
     return all(guest.knows(type(item)) for item in items if not _identity(item))
 
@@ -240,7 +315,9 @@ def _known(value: Any, guest: Any, parent: Any = None) -> bool:
 def _after_a_write(info: Any, guest: Any) -> None:
     """What a mutation wrote may be part of a collaboration now (an annotation drawn in it): read again."""
     raw = getattr(info, "_raw_info", info)
-    if guest is not None and getattr(raw, "parent_type", None) is getattr(getattr(raw, "schema", None), "mutation_type", False):
+    if guest is not None and getattr(raw, "parent_type", None) is getattr(
+        getattr(raw, "schema", None), "mutation_type", False
+    ):
         guest.forget()
 
 
@@ -270,7 +347,10 @@ class TelemetryExtension(SchemaExtension):
             span.update_name(f"graphql {name}")
             span.set_attribute("graphql.operation.name", name)
             result = execution.result
-            failed = bool(execution.pre_execution_errors or (result is not None and getattr(result, "errors", None)))
+            failed = bool(
+                execution.pre_execution_errors
+                or (result is not None and getattr(result, "errors", None))
+            )
             token = _request_token()
             if kind:
                 span.set_attribute("graphql.operation.type", kind)
@@ -281,7 +361,11 @@ class TelemetryExtension(SchemaExtension):
             if failed:
                 span.set_status(StatusCode.ERROR)
             span.end()
-            labels = {"graphql.operation.name": name, "graphql.operation.type": kind or "unknown", "outcome": "error" if failed else "ok"}
+            labels = {
+                "graphql.operation.name": name,
+                "graphql.operation.type": kind or "unknown",
+                "outcome": "error" if failed else "ok",
+            }
             _operation_duration().record(time.perf_counter() - started, labels)
 
 
@@ -293,7 +377,11 @@ def _operation_duration() -> Any:
     """The histogram of how long operations take. Asked for each time: the provider is set after import."""
     from opentelemetry import metrics
 
-    return metrics.get_meter(TELEMETRY_SCOPE).create_histogram("graphql.server.operation.duration", unit="s", description="How long a GraphQL operation took, by name, kind and outcome.")
+    return metrics.get_meter(TELEMETRY_SCOPE).create_histogram(
+        "graphql.server.operation.duration",
+        unit="s",
+        description="How long a GraphQL operation took, by name, kind and outcome.",
+    )
 
 
 def _operation_name(execution: Any) -> str:
@@ -340,18 +428,33 @@ class CollaborationGate(SchemaExtension):
 
         context = self.execution_context
         token = current_token()
-        if token is not None and token.is_scoped and context.graphql_document is not None:
-            closed = closed_roots(context.schema._schema, context.graphql_document, context.operation_name)
+        if (
+            token is not None
+            and token.is_scoped
+            and context.graphql_document is not None
+        ):
+            closed = closed_roots(
+                context.schema._schema, context.graphql_document, context.operation_name
+            )
             if closed:
                 from authentikate.strawberry.errors import denied
 
                 context.pre_execution_errors = [
                     *(context.pre_execution_errors or []),
-                    *(denied(f"Nothing in your collaborations is reached through {name}", COLLABORATION_DOES_NOT_REACH, field=name) for name in closed),
+                    *(
+                        denied(
+                            f"Nothing in your collaborations is reached through {name}",
+                            COLLABORATION_DOES_NOT_REACH,
+                            field=name,
+                        )
+                        for name in closed
+                    ),
                 ]
         yield
 
-    def resolve(self, _next: Any, root: Any, info: Any, *args: Any, **kwargs: Any) -> Any:
+    def resolve(
+        self, _next: Any, root: Any, info: Any, *args: Any, **kwargs: Any
+    ) -> Any:
         result = _next(root, info, *args, **kwargs)
         from arkitekt_service.collaborations.guests import current_token, guest_of
 
@@ -383,4 +486,11 @@ class CollaborationGate(SchemaExtension):
         return await sync_to_async(lambda: _held(value, guest, root))()
 
 
-__all__ = ["COLLABORATION_DOES_NOT_REACH", "IDENTITIES", "CollaborationGate", "Identified", "annotate_schema", "closed_roots"]
+__all__ = [
+    "COLLABORATION_DOES_NOT_REACH",
+    "IDENTITIES",
+    "CollaborationGate",
+    "Identified",
+    "annotate_schema",
+    "closed_roots",
+]

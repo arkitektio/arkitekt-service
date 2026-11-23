@@ -34,22 +34,38 @@ class Admin(Fact):
 class Me(Fact):
     """The service this file is for, as the hub runs it."""
 
-    name: str = Field(description="The service's name in the hub: its compose service and its path.")
-    path: str = Field(description="The path it is served under at the gateway, without slashes: its script name.")
-    url: str = Field(description="Where it is reached from inside the hub, with its path.")
-    identifier: str = Field(description="Its identifier at the coordination server, e.g. live.arkitekt.mikro.")
+    name: str = Field(
+        description="The service's name in the hub: its compose service and its path."
+    )
+    path: str = Field(
+        description="The path it is served under at the gateway, without slashes: its script name."
+    )
+    url: str = Field(
+        description="Where it is reached from inside the hub, with its path."
+    )
+    identifier: str = Field(
+        description="Its identifier at the coordination server, e.g. live.arkitekt.mikro."
+    )
     secret_key: str = Field(description="A secret of its own (Django's SECRET_KEY).")
     debug: bool = False
     allowed_hosts: list[str] = Field(default_factory=lambda: ["*"])
     admin: Admin | None = None
-    settings: dict[str, str] = Field(default_factory=dict, description="What else the hub decided for this service, by name.")
+    settings: dict[str, str] = Field(
+        default_factory=dict,
+        description="What else the hub decided for this service, by name.",
+    )
 
 
 class Hub(Fact):
     """What is the same for every service of the hub."""
 
-    origins: list[str] = Field(default_factory=list, description="The origins the hub is reached at (CSRF trusted origins).")
-    auth: dict[str, JSON] = Field(description="How tokens are verified here: authentikate's settings, the same for every service.")
+    origins: list[str] = Field(
+        default_factory=list,
+        description="The origins the hub is reached at (CSRF trusted origins).",
+    )
+    auth: dict[str, JSON] = Field(
+        description="How tokens are verified here: authentikate's settings, the same for every service."
+    )
 
 
 class Database(Fact):
@@ -80,7 +96,10 @@ class Storage(Fact):
     secret_key: str
     role_arn: str | None = None
     session_duration_seconds: int | None = None
-    buckets: dict[str, str] = Field(default_factory=dict, description="The bucket made for each purpose the service asked for (media, zarr, …).")
+    buckets: dict[str, str] = Field(
+        default_factory=dict,
+        description="The bucket made for each purpose the service asked for (media, zarr, …).",
+    )
 
 
 class Trust(Fact):
@@ -100,11 +119,25 @@ class Instance(Fact):
 class Peer(Fact):
     """Another part of the hub this service may talk to."""
 
-    identifier: str | None = Field(default=None, description="Its identifier in the trust bundle, for a service of the hub.")
-    url: str = Field(description="Where it is reached from inside the hub, with its path.")
-    offers: dict[str, str] = Field(default_factory=dict, description="The endpoints it offers, by kind, as full internal URLs (rekuest_service, rekuest_hook, agent, …).")
-    hosts: Hosts | None = Field(default=None, description="The structures it holds and the signals it sends, as its image says: what the hub's rekuest catalogues without asking it.")
-    settings: dict[str, str] = Field(default_factory=dict, description="What else one needs to use it (an API key, a socket path).")
+    identifier: str | None = Field(
+        default=None,
+        description="Its identifier in the trust bundle, for a service of the hub.",
+    )
+    url: str = Field(
+        description="Where it is reached from inside the hub, with its path."
+    )
+    offers: dict[str, str] = Field(
+        default_factory=dict,
+        description="The endpoints it offers, by kind, as full internal URLs (rekuest_service, rekuest_hook, agent, …).",
+    )
+    hosts: Hosts | None = Field(
+        default=None,
+        description="The structures it holds and the signals it sends, as its image says: what the hub's rekuest catalogues without asking it.",
+    )
+    settings: dict[str, str] = Field(
+        default_factory=dict,
+        description="What else one needs to use it (an API key, a socket path).",
+    )
 
 
 class Facts(Fact):
@@ -113,12 +146,20 @@ class Facts(Fact):
     facts: Literal[1] = Field(default=1, description="The version of this document.")
     me: Me
     hub: Hub
-    databases: dict[str, Database] = Field(default_factory=dict, description="The service's databases, by the name it asked for each under (`needs.databases`).")
+    databases: dict[str, Database] = Field(
+        default_factory=dict,
+        description="The service's databases, by the name it asked for each under (`needs.databases`).",
+    )
     redis: Redis | None = None
     storage: Storage | None = None
     instance: Instance | None = None
-    peers: dict[str, Peer] = Field(default_factory=dict, description="The other parts of the hub, by name.")
-    secrets: dict[str, str] = Field(default_factory=dict, description="Files mounted for the service, by name, as paths in its container.")
+    peers: dict[str, Peer] = Field(
+        default_factory=dict, description="The other parts of the hub, by name."
+    )
+    secrets: dict[str, str] = Field(
+        default_factory=dict,
+        description="Files mounted for the service, by name, as paths in its container.",
+    )
 
     def offering(self, kind: str) -> dict[str, Peer]:
         """The peers that offer ``kind``, by name."""

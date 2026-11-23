@@ -25,11 +25,25 @@ class Intake:
             def do_POST(self):  # noqa: N802
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 try:
-                    verified = trust.verify("POST", self.path, body, self.headers.get("Authorization"), audience=REKUEST)
+                    verified = trust.verify(
+                        "POST",
+                        self.path,
+                        body,
+                        self.headers.get("Authorization"),
+                        audience=REKUEST,
+                    )
                     issuer = verified.issuer
                 except trust.TrustError as error:
                     issuer = f"refused: {error}"
-                intake.received.append({"path": self.path, "headers": dict(self.headers), "body": body, "json": json.loads(body), "issuer": issuer})
+                intake.received.append(
+                    {
+                        "path": self.path,
+                        "headers": dict(self.headers),
+                        "body": body,
+                        "json": json.loads(body),
+                        "issuer": issuer,
+                    }
+                )
                 self.send_response(202)
                 self.end_headers()
 
@@ -55,9 +69,20 @@ def intake(settings):
     server.server.shutdown()
 
 
-def as_rekuest(method: str, path: str, body: bytes = b"", *, audience: str = "testsvc") -> dict:
+def as_rekuest(
+    method: str, path: str, body: bytes = b"", *, audience: str = "testsvc"
+) -> dict:
     """Headers of a request rekuest sends to the service."""
-    return {"Authorization": trust.sign(method, path, body, issuer=REKUEST, audience=audience, key=django_settings.REKUEST_KEY)}
+    return {
+        "Authorization": trust.sign(
+            method,
+            path,
+            body,
+            issuer=REKUEST,
+            audience=audience,
+            key=django_settings.REKUEST_KEY,
+        )
+    }
 
 
 @pytest.fixture(autouse=True)

@@ -43,15 +43,28 @@ _TIMEOUT = 10.0
 AGENT_HEADER = "X-Rekuest-Agent"
 
 
-def _verified(agent: HookAgent, request: HttpRequest, config: dict[str, Any]) -> str | None:
+def _verified(
+    agent: HookAgent, request: HttpRequest, config: dict[str, Any]
+) -> str | None:
     """The hub's agent id of a request rekuest really sent to THIS agent, or None."""
     try:
-        verified = trust.verify(request.method or "", request.path, request.body, request.headers.get("Authorization"), audience=agent.signing_identifier(), max_skew=int(config.get("MAX_SKEW", 30)))
+        verified = trust.verify(
+            request.method or "",
+            request.path,
+            request.body,
+            request.headers.get("Authorization"),
+            audience=agent.signing_identifier(),
+            max_skew=int(config.get("MAX_SKEW", 30)),
+        )
     except trust.TrustError as error:
         logger.info("Refused a request to %s: %s", request.path, error)
         return None
     if verified.issuer != agent.rekuest_identifier():
-        logger.info("Refused a request to %s from %s: only rekuest may call it", request.path, verified.issuer)
+        logger.info(
+            "Refused a request to %s from %s: only rekuest may call it",
+            request.path,
+            verified.issuer,
+        )
         return None
     return request.headers.get(AGENT_HEADER, "")
 
@@ -91,43 +104,100 @@ def hook(agent: HookAgent, request: HttpRequest) -> HttpResponse:
     task = str(message.get("task", ""))
     target = agent.actions.get(message.get("interface", ""))
     if target is None:
-        _report(agent, config, agent_id, {"type": "CRITICAL", "task": task, "error": f"No action {message.get('interface')!r} on this agent"})
+        _report(
+            agent,
+            config,
+            agent_id,
+            {
+                "type": "CRITICAL",
+                "task": task,
+                "error": f"No action {message.get('interface')!r} on this agent",
+            },
+        )
         return JsonResponse({"error": "Unknown interface"}, status=404)
 
     # Whose run this is: the organization of the agent rekuest assigned (every organization has its own).
     try:
-        args = target.arguments(dict(message.get("args") or {}), message.get("org") or None)
+        args = target.arguments(
+            dict(message.get("args") or {}), message.get("org") or None
+        )
     except ValueError as error:
-        _report(agent, config, agent_id, {"type": "CRITICAL", "task": task, "error": str(error)})
+        _report(
+            agent,
+            config,
+            agent_id,
+            {"type": "CRITICAL", "task": task, "error": str(error)},
+        )
         return JsonResponse({"error": str(error)}, status=400)
     # A thread, not an event-loop task: it outlives the request under any server (WSGI
     # runserver tears its loop down with the response), and the function may block.
     # Where in a trace the task was assigned, if rekuest says: the run and its reports belong there.
-    traceparent = message.get("traceparent") if isinstance(message.get("traceparent"), str) else None
-    threading.Thread(target=_run, args=(agent, config, agent_id, task, target, args, traceparent), name=f"rekuest-hook-{task}", daemon=True).start()
+    traceparent = (
+        message.get("traceparent")
+        if isinstance(message.get("traceparent"), str)
+        else None
+    )
+    threading.Thread(
+        target=_run,
+        args=(agent, config, agent_id, task, target, args, traceparent),
+        name=f"rekuest-hook-{task}",
+        daemon=True,
+    ).start()
     return JsonResponse({"accepted": task}, status=202)
 
 
-def _run(agent: HookAgent, config: dict[str, Any], agent_id: str, task: str, target: Action, args: dict[str, Any], traceparent: str | None = None) -> None:
+def _run(
+    agent: HookAgent,
+    config: dict[str, Any],
+    agent_id: str,
+    task: str,
+    target: Action,
+    args: dict[str, Any],
+    traceparent: str | None = None,
+) -> None:
     """Run one Assign and report it, inside the trace it was assigned in."""
     with telemetry.continuing(traceparent, f"run {target.interface}"):
         _run_reporting(agent, config, agent_id, task, target, args)
 
 
-def _run_reporting(agent: HookAgent, config: dict[str, Any], agent_id: str, task: str, target: Action, args: dict[str, Any]) -> None:
+def _run_reporting(
+    agent: HookAgent,
+    config: dict[str, Any],
+    agent_id: str,
+    task: str,
+    target: Action,
+    args: dict[str, Any],
+) -> None:
     """Started first: that is what tells rekuest it was picked up."""
     try:
         _report(agent, config, agent_id, {"type": "STARTED", "task": task})
         result = target.function(**args)
         if inspect.isawaitable(result):
             result = asyncio.run(_await(result))
-        returns = result if isinstance(result, dict) else ({} if result is None else {"result": result})
-        _report(agent, config, agent_id, {"type": "YIELD", "task": task, "returns": returns})
+        returns = (
+            result
+            if isinstance(result, dict)
+            else ({} if result is None else {"result": result})
+        )
+        _report(
+            agent, config, agent_id, {"type": "YIELD", "task": task, "returns": returns}
+        )
         _report(agent, config, agent_id, {"type": "COMPLETED", "task": task})
     except Exception as error:
-        logger.warning("rekuest action %s (task %s) failed: %s", target.interface, task, error)
+        logger.warning(
+            "rekuest action %s (task %s) failed: %s", target.interface, task, error
+        )
         logger.debug("rekuest action %s failed", target.interface, exc_info=True)
-        _report(agent, config, agent_id, {"type": "CRITICAL", "task": task, "error": f"{type(error).__name__}: {error}\n{traceback.format_exc(limit=5)}"})
+        _report(
+            agent,
+            config,
+            agent_id,
+            {
+                "type": "CRITICAL",
+                "task": task,
+                "error": f"{type(error).__name__}: {error}\n{traceback.format_exc(limit=5)}",
+            },
+        )
     finally:
         close_old_connections()
 
@@ -136,22 +206,42 @@ async def _await(awaitable):
     return await awaitable
 
 
-def _report(agent: HookAgent, config: dict[str, Any], agent_id: str, message: dict[str, Any]) -> bool:
+def _report(
+    agent: HookAgent, config: dict[str, Any], agent_id: str, message: dict[str, Any]
+) -> bool:
     """POST one signed event to rekuest's intake. Never raises: a lost report is rekuest's to time out."""
     body = json.dumps({"id": str(uuid.uuid4()), **message}).encode()
     url = f"{config['REKUEST_URL'].rstrip('/')}/agi/http/{agent_id}"
     try:
-        authorization = trust.sign("POST", urlparse(url).path, body, issuer=agent.signing_identifier(), audience=agent.rekuest_identifier(), key=agent.signing_key())
+        authorization = trust.sign(
+            "POST",
+            urlparse(url).path,
+            body,
+            issuer=agent.signing_identifier(),
+            audience=agent.rekuest_identifier(),
+            key=agent.signing_key(),
+        )
     except trust.TrustError as error:
-        logger.warning("Could not sign a report for task %s: %s", message.get("task"), error)
+        logger.warning(
+            "Could not sign a report for task %s: %s", message.get("task"), error
+        )
         return False
-    headers = {"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": authorization,
+        **telemetry.headers(),
+    }
     try:
         response = httpx.post(url, content=body, headers=headers, timeout=_TIMEOUT)
         response.raise_for_status()
         return True
     except Exception as error:  # noqa: BLE001  never raises: a lost delivery is rekuest's to time out
-        logger.warning("Could not report %s for task %s to rekuest: %s", message.get("type"), message.get("task"), error)
+        logger.warning(
+            "Could not report %s for task %s to rekuest: %s",
+            message.get("type"),
+            message.get("task"),
+            error,
+        )
         return False
 
 
@@ -174,5 +264,9 @@ def urlpatterns_for(agent: HookAgent) -> list:
 
     return [
         path(_prefixed("_rekuest/hook"), hook_view, name="rekuest_hook"),
-        path(_prefixed("_rekuest/hook/manifest"), manifest_view, name="rekuest_hook_manifest"),
+        path(
+            _prefixed("_rekuest/hook/manifest"),
+            manifest_view,
+            name="rekuest_hook_manifest",
+        ),
     ]

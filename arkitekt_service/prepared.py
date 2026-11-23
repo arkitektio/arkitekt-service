@@ -47,7 +47,12 @@ def own_apps() -> list[str]:
     own that has models and no migrations at all is held to them like any other: its tables
     would never be made.
     """
-    return sorted(app.label for app in apps.get_app_configs() if list(app.get_models()) and not {"site-packages", "dist-packages"} & set(Path(app.path).parts))
+    return sorted(
+        app.label
+        for app in apps.get_app_configs()
+        if list(app.get_models())
+        and not {"site-packages", "dist-packages"} & set(Path(app.path).parts)
+    )
 
 
 def migrations_are_committed() -> None:
@@ -61,17 +66,27 @@ def migrations_are_committed() -> None:
         # (`MIGRATION_MODULES`): the committed ones are still what a hub runs, so they are
         # what is compared here.
         with override_settings(MIGRATION_MODULES={}):
-            call_command("makemigrations", *own, "--check", "--dry-run", stdout=said, stderr=said)
+            call_command(
+                "makemigrations", *own, "--check", "--dry-run", stdout=said, stderr=said
+            )
     except SystemExit as stopped:
         if stopped.code:
-            raise AssertionError(f"a model changed without its migration; run `python manage.py makemigrations` and commit it:\n{said.getvalue()}") from None
+            raise AssertionError(
+                f"a model changed without its migration; run `python manage.py makemigrations` and commit it:\n{said.getvalue()}"
+            ) from None
 
 
 def jobs_are_commands(contract: Contract) -> None:
     """Every job the contract offers names a ``manage.py`` command this service has."""
     known = get_commands()
-    missing = {name: job.manage[0] for name, job in contract.jobs.items() if job.manage[0] not in known}
-    assert not missing, f"jobs that name a command this service does not have: {missing}"
+    missing = {
+        name: job.manage[0]
+        for name, job in contract.jobs.items()
+        if job.manage[0] not in known
+    }
+    assert not missing, (
+        f"jobs that name a command this service does not have: {missing}"
+    )
 
 
 def setup_runs_again(contract: Contract) -> None:
@@ -82,4 +97,6 @@ def setup_runs_again(contract: Contract) -> None:
                 call_command(*contract.jobs[name].manage, stdout=io.StringIO())
             except SystemExit as stopped:
                 if stopped.code:
-                    raise AssertionError(f"setup job `{name}` failed on its {attempt} run (exit {stopped.code})") from None
+                    raise AssertionError(
+                        f"setup job `{name}` failed on its {attempt} run (exit {stopped.code})"
+                    ) from None

@@ -58,10 +58,18 @@ def _names(model: type[BaseModel]) -> dict[str, str]:
     return names
 
 
-def _unread(model: type[BaseModel], written: Mapping[str, JSON], path: str, module: str, into: Unread) -> None:
+def _unread(
+    model: type[BaseModel],
+    written: Mapping[str, JSON],
+    path: str,
+    module: str,
+    into: Unread,
+) -> None:
     # A block that passes its extras on (a connection's driver options) and the top level,
     # which every service of a hub shares the shape of, are open: nothing there is unknown.
-    closed = model.model_config.get("extra") != "allow" and not issubclass(model, BaseSettings)
+    closed = model.model_config.get("extra") != "allow" and not issubclass(
+        model, BaseSettings
+    )
     names = _names(model)
     for key, value in written.items():
         where = f"{path}{key}"
@@ -73,9 +81,17 @@ def _unread(model: type[BaseModel], written: Mapping[str, JSON], path: str, modu
         if name != key:
             into.renamed.append((where, f"{path}{name}"))
         for inner in _models_of(model.model_fields[name].annotation, module):
-            for index, item in enumerate(value) if isinstance(value, list) else [(None, value)]:
+            for index, item in (
+                enumerate(value) if isinstance(value, list) else [(None, value)]
+            ):
                 if isinstance(item, dict):
-                    _unread(inner, item, f"{where}." if index is None else f"{where}[{index}].", module, into)
+                    _unread(
+                        inner,
+                        item,
+                        f"{where}." if index is None else f"{where}[{index}].",
+                        module,
+                        into,
+                    )
 
 
 def unread(settings: type[BaseSettings], written: Mapping[str, JSON]) -> Unread:

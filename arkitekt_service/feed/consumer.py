@@ -58,24 +58,44 @@ class Outcome:
 
     def report(self) -> dict[str, str | int | None]:
         """As a hook action returns it."""
-        return {"ended": self.ended.value, "applied": self.applied, "pages": self.pages, "xid": str(self.cursor.xid), "id": self.cursor.id, "halted": self.halted}
+        return {
+            "ended": self.ended.value,
+            "applied": self.applied,
+            "pages": self.pages,
+            "xid": str(self.cursor.xid),
+            "id": self.cursor.id,
+            "halted": self.halted,
+        }
 
 
 def _cursor_row(reader: FeedReader, organization: str) -> FeedCursor:
-    row, _ = FeedCursor.objects.get_or_create(producer=reader.producer, feed=reader.feed, organization=organization)
+    row, _ = FeedCursor.objects.get_or_create(
+        producer=reader.producer, feed=reader.feed, organization=organization
+    )
     return row
 
 
 def _locked(reader: FeedReader, organization: str) -> bool:
     with connection.cursor() as cursor:
-        cursor.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0))", [f"arkitekt-feed:{reader.producer}:{reader.feed}:{organization}"])
+        cursor.execute(
+            "SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0))",
+            [f"arkitekt-feed:{reader.producer}:{reader.feed}:{organization}"],
+        )
         (got,) = cursor.fetchone()
     return bool(got)
 
 
 def _halt(reader: FeedReader, organization: str, why: str) -> None:
-    logger.error("Halted reading %s from %s for %s: %s", reader.feed, reader.producer, organization, why)
-    FeedCursor.objects.filter(producer=reader.producer, feed=reader.feed, organization=organization).update(halted=why)
+    logger.error(
+        "Halted reading %s from %s for %s: %s",
+        reader.feed,
+        reader.producer,
+        organization,
+        why,
+    )
+    FeedCursor.objects.filter(
+        producer=reader.producer, feed=reader.feed, organization=organization
+    ).update(halted=why)
 
 
 def _refusal(row: FeedCursor, page: RemotePage) -> str | None:
@@ -87,14 +107,23 @@ def _refusal(row: FeedCursor, page: RemotePage) -> str | None:
     return None
 
 
-def apply_pages(reader: FeedReader, organization: str, apply: Callable[[list[RemoteEntry]], None], *, budget_s: float = 20.0, limit: int = 1000) -> Outcome:
+def apply_pages(
+    reader: FeedReader,
+    organization: str,
+    apply: Callable[[list[RemoteEntry]], None],
+    *,
+    budget_s: float = 20.0,
+    limit: int = 1000,
+) -> Outcome:
     """Apply ``organization``'s entries after its cursor, page by page, until caught up or out of time."""
     deadline = time.monotonic() + budget_s
     applied = pages = 0
     row = _cursor_row(reader, organization)
     while True:
         if row.halted:
-            return Outcome(Ended.HALTED, applied, pages, Cursor(row.xid, row.entry), row.halted)
+            return Outcome(
+                Ended.HALTED, applied, pages, Cursor(row.xid, row.entry), row.halted
+            )
         fetched_at = Cursor(row.xid, row.entry)
         page = reader.page(organization, fetched_at, limit)
 
@@ -131,11 +160,15 @@ def apply_pages(reader: FeedReader, organization: str, apply: Callable[[list[Rem
             return Outcome(Ended.BUDGET, applied, pages, Cursor(row.xid, row.entry))
 
 
-def resume(producer: str, feed: str, organization: str, *, adopt_epoch: bool = False) -> None:
+def resume(
+    producer: str, feed: str, organization: str, *, adopt_epoch: bool = False
+) -> None:
     """Let a halted cursor read again. ``adopt_epoch`` forgets the epoch it followed — for after a
     restore someone has decided to accept (the cursor's position is kept: reset it by hand too
     when the restored history should be read from the start)."""
     updates: dict[str, str | None] = {"halted": None}
     if adopt_epoch:
         updates["epoch"] = None
-    FeedCursor.objects.filter(producer=producer, feed=feed, organization=organization).update(**updates)
+    FeedCursor.objects.filter(
+        producer=producer, feed=feed, organization=organization
+    ).update(**updates)

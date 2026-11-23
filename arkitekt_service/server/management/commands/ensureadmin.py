@@ -16,7 +16,9 @@ from arkitekt_service.contract import contract
 
 
 class Command(BaseCommand):
-    help = "Create the configured superuser (django.admin) if it does not already exist."
+    help = (
+        "Create the configured superuser (django.admin) if it does not already exist."
+    )
     requires_migrations_checks = True
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -28,8 +30,12 @@ class Command(BaseCommand):
 
         users = get_user_model()
         if users.objects.filter(username=admin.username).exists():
-            self.stdout.write(f"Superuser '{admin.username}' already exists: nothing to do.")
+            self.stdout.write(
+                f"Superuser '{admin.username}' already exists: nothing to do."
+            )
             return
 
-        users.objects.create_superuser(username=admin.username, email=admin.email or "", password=admin.password)  # pyright: ignore[reportAttributeAccessIssue]
+        users.objects.create_superuser(
+            username=admin.username, email=admin.email or "", password=admin.password
+        )
         self.stdout.write(self.style.SUCCESS(f"Created superuser '{admin.username}'."))

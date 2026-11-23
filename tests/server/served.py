@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from arkitekt_service.contract import JSON, Contract, Description, Facts, Start, blocks
-from arkitekt_service.server.settings import DjangoSettings, InstanceSettings, PostgresSettings, RedisSettings, ServiceSettings
+from arkitekt_service.server.settings import (
+    DjangoSettings,
+    InstanceSettings,
+    PostgresSettings,
+    RedisSettings,
+    ServiceSettings,
+)
 
 
 class Redis(RedisSettings):

@@ -49,7 +49,14 @@ _sender: threading.Thread | None = None
 _sender_lock = threading.Lock()
 
 
-def enqueue(config: dict[str, Any], service: str, issuer: str, audience: str, message: dict[str, Any], key: Any = None) -> None:
+def enqueue(
+    config: dict[str, Any],
+    service: str,
+    issuer: str,
+    audience: str,
+    message: dict[str, Any],
+    key: Any = None,
+) -> None:
     """Hand a signal to this process's sender thread: one at a time, in commit order.
 
     One thread, not one per signal — a sync that touches a thousand rows must not start a
@@ -59,12 +66,19 @@ def enqueue(config: dict[str, Any], service: str, issuer: str, audience: str, me
     global _sender
     with _sender_lock:
         if _sender is None or not _sender.is_alive():
-            _sender = threading.Thread(target=_drain, name="rekuest-signal-sender", daemon=True)
+            _sender = threading.Thread(
+                target=_drain, name="rekuest-signal-sender", daemon=True
+            )
             _sender.start()
     try:
         _outbox.put_nowait((config, service, issuer, audience, message, key))
     except queue.Full:
-        logger.warning("Signal outbox full; dropping %s %s:%s", message["kind"], message["identifier"], message["object"])
+        logger.warning(
+            "Signal outbox full; dropping %s %s:%s",
+            message["kind"],
+            message["identifier"],
+            message["object"],
+        )
 
 
 def _drain() -> None:
@@ -76,20 +90,39 @@ def _drain() -> None:
             _outbox.task_done()
 
 
-def send(config: dict[str, Any], service: str, issuer: str, audience: str, message: dict[str, Any], key: Any = None) -> bool:
+def send(
+    config: dict[str, Any],
+    service: str,
+    issuer: str,
+    audience: str,
+    message: dict[str, Any],
+    key: Any = None,
+) -> bool:
     """POST one signal to rekuest's signal intake, signed with this instance's key. Never raises."""
     body = json.dumps(message).encode()
     url = f"{config['REKUEST_URL'].rstrip('/')}/agi/signal/{service}"
     try:
-        authorization = trust.sign("POST", urlparse(url).path, body, issuer=issuer, audience=audience, key=key)
+        authorization = trust.sign(
+            "POST", urlparse(url).path, body, issuer=issuer, audience=audience, key=key
+        )
     except trust.TrustError as error:
         logger.warning("Could not sign a signal: %s", error)
         return False
-    headers = {"Content-Type": "application/json", "Authorization": authorization, **telemetry.headers()}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": authorization,
+        **telemetry.headers(),
+    }
     try:
         response = httpx.post(url, content=body, headers=headers, timeout=_TIMEOUT)
         response.raise_for_status()
         return True
     except Exception as error:  # noqa: BLE001  never raises: a lost delivery is rekuest's to time out
-        logger.warning("Could not signal %s %s:%s to rekuest: %s", message["kind"], message["identifier"], message["object"], error)
+        logger.warning(
+            "Could not signal %s %s:%s to rekuest: %s",
+            message["kind"],
+            message["identifier"],
+            message["object"],
+            error,
+        )
         return False

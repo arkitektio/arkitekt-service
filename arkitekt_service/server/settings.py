@@ -21,7 +21,12 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 from arkitekt_service.contract.json_types import JSON
 
@@ -55,17 +60,38 @@ class AdminSettings(BaseModel):
 class DjangoSettings(BaseModel):
     """Core Django framework settings."""
 
-    secret_key: str = Field(description="Django SECRET_KEY for cryptographic signing. Secret — must be set.")
-    debug: bool = Field(default=False, description="Enable Django debug mode (never in production).")
-    log_level: str = Field(default="INFO", description="Root logger level (e.g. DEBUG, INFO, WARNING). The LOG_LEVEL env var overrides it.")
-    enable_rich_logging: bool = Field(
-        default=False, description="Render console logs with rich (colours, boxed tracebacks). A dev convenience; off by default, as plain one-line records suit container logs."
+    secret_key: str = Field(
+        description="Django SECRET_KEY for cryptographic signing. Secret — must be set."
     )
-    hosts: list[str] = Field(default_factory=lambda: ["*"], description="ALLOWED_HOSTS entries.")
-    use_x_forwarded_host: bool = Field(default=True, description="Trust the X-Forwarded-Host header behind a reverse proxy.")
-    admin: AdminSettings | None = Field(default=None, description="Superuser provisioned on first boot.")
-    csrf_trusted_origins: list[str] = Field(default_factory=lambda: ["http://localhost", "https://localhost"], description="CSRF_TRUSTED_ORIGINS for unsafe (POST) requests.")
-    force_script_name: str = Field(default="", description="URL path prefix (FORCE_SCRIPT_NAME) this service is served under.")
+    debug: bool = Field(
+        default=False, description="Enable Django debug mode (never in production)."
+    )
+    log_level: str = Field(
+        default="INFO",
+        description="Root logger level (e.g. DEBUG, INFO, WARNING). The LOG_LEVEL env var overrides it.",
+    )
+    enable_rich_logging: bool = Field(
+        default=False,
+        description="Render console logs with rich (colours, boxed tracebacks). A dev convenience; off by default, as plain one-line records suit container logs.",
+    )
+    hosts: list[str] = Field(
+        default_factory=lambda: ["*"], description="ALLOWED_HOSTS entries."
+    )
+    use_x_forwarded_host: bool = Field(
+        default=True,
+        description="Trust the X-Forwarded-Host header behind a reverse proxy.",
+    )
+    admin: AdminSettings | None = Field(
+        default=None, description="Superuser provisioned on first boot."
+    )
+    csrf_trusted_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost", "https://localhost"],
+        description="CSRF_TRUSTED_ORIGINS for unsafe (POST) requests.",
+    )
+    force_script_name: str = Field(
+        default="",
+        description="URL path prefix (FORCE_SCRIPT_NAME) this service is served under.",
+    )
 
 
 class PostgresSettings(BaseModel):
@@ -73,7 +99,10 @@ class PostgresSettings(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    engine: str = Field(default="django.db.backends.postgresql", description="Django database backend (PostgreSQL).")
+    engine: str = Field(
+        default="django.db.backends.postgresql",
+        description="Django database backend (PostgreSQL).",
+    )
     db_name: str = Field(description="Database name.")
     username: str = Field(description="Database user.")
     password: str = Field(description="Database password. Secret — must be set.")
@@ -97,15 +126,25 @@ class RedisSettings(BaseModel):
 class InstanceTrustSettings(BaseModel):
     """Where the hub's instance public keys come from: the coord's bundle, or inline."""
 
-    jwks_uri: str | None = Field(default=None, description="The coord's hub-keys URL (the fakts `self.hub_keys_url`).")
-    jwks: dict[str, Any] | None = Field(default=None, description="The bundle inline (a JWKS whose keys carry `service`), for a hub not enrolled yet.")
+    jwks_uri: str | None = Field(
+        default=None,
+        description="The coord's hub-keys URL (the fakts `self.hub_keys_url`).",
+    )
+    jwks: dict[str, Any] | None = Field(
+        default=None,
+        description="The bundle inline (a JWKS whose keys carry `service`), for a hub not enrolled yet.",
+    )
 
 
 class InstanceSettings(BaseModel):
     """This instance's key — its only secret towards the hub's other services — and whom it trusts."""
 
-    private_key: str = Field(description="Ed25519 private key (PKCS#8 PEM). Signs this service's requests to rekuest. Secret — must be set.")
-    trust: InstanceTrustSettings = Field(default_factory=InstanceTrustSettings, description="The hub's trust bundle.")
+    private_key: str = Field(
+        description="Ed25519 private key (PKCS#8 PEM). Signs this service's requests to rekuest. Secret — must be set."
+    )
+    trust: InstanceTrustSettings = Field(
+        default_factory=InstanceTrustSettings, description="The hub's trust bundle."
+    )
 
 
 class TelemetrySettings(BaseModel):
@@ -115,10 +154,16 @@ class TelemetrySettings(BaseModel):
         default=None,
         description="An OTLP collector's HTTP address (`http://collector:4318`): traces go to `/v1/traces` under it, metrics to `/v1/metrics`. Unset, nothing is recorded or sent.",
     )
-    sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0, description="The share of traces started here that are recorded. A request that arrives inside a trace follows that trace's decision.")
+    sample_ratio: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="The share of traces started here that are recorded. A request that arrives inside a trace follows that trace's decision.",
+    )
     metrics: bool = Field(default=True, description="Send metrics beside the traces.")
     statements: bool = Field(
-        default=True, description="Record a span per database statement. Off, a trace shows requests, operations and outgoing calls only: far fewer spans where a request runs many statements."
+        default=True,
+        description="Record a span per database statement. Off, a trace shows requests, operations and outgoing calls only: far fewer spans where a request runs many statements.",
     )
 
 
@@ -130,7 +175,10 @@ class ServiceSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_nested_delimiter="__", extra="ignore")
 
-    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings, description="Traces and metrics, to a collector of the hub's own (see `arkitekt_service.telemetry`).")
+    telemetry: TelemetrySettings = Field(
+        default_factory=TelemetrySettings,
+        description="Traces and metrics, to a collector of the hub's own (see `arkitekt_service.telemetry`).",
+    )
 
     @classmethod
     def settings_customise_sources(
@@ -141,4 +189,8 @@ class ServiceSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (init_settings, env_settings, YamlConfigSettingsSource(settings_cls, yaml_file=config_path()))
+        return (
+            init_settings,
+            env_settings,
+            YamlConfigSettingsSource(settings_cls, yaml_file=config_path()),
+        )

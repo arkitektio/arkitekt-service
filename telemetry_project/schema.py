@@ -29,7 +29,9 @@ class Query:
     async def asked(self, url: str) -> str | None:
         """The ``traceparent`` another service sees when this one asks it something, the way the package's own callers do."""
         async with httpx.AsyncClient(timeout=5) as client:
-            return (await client.get(url, headers=telemetry.headers())).json()["traceparent"]
+            return (await client.get(url, headers=telemetry.headers())).json()[
+                "traceparent"
+            ]
 
 
 schema = strawberry.Schema(query=Query, extensions=[TelemetryExtension])

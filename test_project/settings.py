@@ -12,13 +12,22 @@ from arkitekt_service.trust import public_jwk
 SECRET_KEY = "rekuest-service-tests"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
-INSTALLED_APPS = ["django.contrib.contenttypes", "django.contrib.auth", "arkitekt_service.server", "test_app"]
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "arkitekt_service.server",
+    "test_app",
+]
 try:  # the `authentikate` extra: collaborations and their gate are tested with it
     import authentikate  # noqa: F401
 except ImportError:
     pass
 else:
-    INSTALLED_APPS += ["authentikate", "arkitekt_service.collaborations", "test_org_app"]
+    INSTALLED_APPS += [
+        "authentikate",
+        "arkitekt_service.collaborations",
+        "test_org_app",
+    ]
     AUTH_USER_MODEL = "authentikate.User"
     AUTHENTIKATE = {"issuers": [], "audience": "12"}
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
@@ -39,7 +48,10 @@ TRUST_JWKS = {
         {**public_jwk(BROKEN_KEY), "service": "broken"},
     ]
 }
-INSTANCE = {"PRIVATE_KEY": SERVICE_KEY.as_pem(private=True).decode(), "TRUST_JWKS": TRUST_JWKS}
+INSTANCE = {
+    "PRIVATE_KEY": SERVICE_KEY.as_pem(private=True).decode(),
+    "TRUST_JWKS": TRUST_JWKS,
+}
 
 # Tests point REKUEST_URL at a local HTTP server standing in for rekuest's intake.
 REKUEST_SERVICE = {"REKUEST_URL": "http://127.0.0.1:9", "MAX_SKEW": 30}

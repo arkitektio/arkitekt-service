@@ -41,7 +41,14 @@ from dataclasses import dataclass, field
 from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS, models, router, transaction
-from django.db.models.deletion import CASCADE, PROTECT, RESTRICT, Collector, ProtectedError, RestrictedError
+from django.db.models.deletion import (
+    CASCADE,
+    PROTECT,
+    RESTRICT,
+    Collector,
+    ProtectedError,
+    RestrictedError,
+)
 from django.dispatch import Signal
 
 IDENTITY_APP = "authentikate"
@@ -61,7 +68,9 @@ class PruneRefused(Exception):
 
 def organization_model() -> type[models.Model]:
     if not apps.is_installed(IDENTITY_APP):
-        raise ImproperlyConfigured("This service has no organizations (authentikate is not installed)")
+        raise ImproperlyConfigured(
+            "This service has no organizations (authentikate is not installed)"
+        )
     return apps.get_model(IDENTITY_APP, "Organization")
 
 
@@ -73,20 +82,28 @@ def resolve(names: Sequence[str]) -> list[models.Model]:
         if "#" in name:
             matches = list(Organization._base_manager.filter(identifier=name))
         else:
-            matches = list(Organization._base_manager.filter(identifier__endswith=f"#{name}"))
+            matches = list(
+                Organization._base_manager.filter(identifier__endswith=f"#{name}")
+            )
         if not matches:
             raise PruneRefused(f"No organization {name!r} on this service")
         if len(matches) > 1:
-            raise PruneRefused(f"{name!r} names {len(matches)} organizations ({', '.join(str(m) for m in matches)}): give the whole identifier")
+            raise PruneRefused(
+                f"{name!r} names {len(matches)} organizations ({', '.join(str(m) for m in matches)}): give the whole identifier"
+            )
         if matches[0] not in found:
             found.append(matches[0])
     return found
 
 
-def select(*, only: Sequence[str] | None = None, keep: Sequence[str] | None = None) -> list[models.Model]:
+def select(
+    *, only: Sequence[str] | None = None, keep: Sequence[str] | None = None
+) -> list[models.Model]:
     """The organizations to prune: those ``only`` names, or every one ``keep`` does not."""
     if (only is None) == (keep is None):
-        raise PruneRefused("Name the organizations to prune (only) or the ones to keep (keep), not both")
+        raise PruneRefused(
+            "Name the organizations to prune (only) or the ones to keep (keep), not both"
+        )
     if only is not None:
         if not only:
             raise PruneRefused("only names no organization")
@@ -98,7 +115,11 @@ def select(*, only: Sequence[str] | None = None, keep: Sequence[str] | None = No
 def _org_fields(model: type[models.Model], *, local: bool) -> list[models.ForeignKey]:
     Organization = organization_model()
     fields = model._meta.local_concrete_fields if local else model._meta.concrete_fields
-    return [f for f in fields if isinstance(f, models.ForeignKey) and f.remote_field.model is Organization]
+    return [
+        f
+        for f in fields
+        if isinstance(f, models.ForeignKey) and f.remote_field.model is Organization
+    ]
 
 
 def scope_models() -> list[type[models.Model]]:
@@ -117,14 +138,22 @@ def _protectors() -> dict[type[models.Model], list[models.ForeignKey]]:
     found: dict[type[models.Model], list[models.ForeignKey]] = defaultdict(list)
     for model in apps.get_models(include_auto_created=True):
         for f in model._meta.local_concrete_fields:
-            if isinstance(f, models.ForeignKey) and f.remote_field.on_delete in (PROTECT, RESTRICT):
+            if isinstance(f, models.ForeignKey) and f.remote_field.on_delete in (
+                PROTECT,
+                RESTRICT,
+            ):
                 found[f.remote_field.model._meta.concrete_model].append(f)
     return found
 
 
-def _ordered(scoped: list[type[models.Model]], protectors: dict[type[models.Model], list[models.ForeignKey]]) -> list[type[models.Model]]:
+def _ordered(
+    scoped: list[type[models.Model]],
+    protectors: dict[type[models.Model], list[models.ForeignKey]],
+) -> list[type[models.Model]]:
     """Referrers before what they protect, where the protections among scoped models allow an order."""
-    graph: dict[type[models.Model], set[type[models.Model]]] = {model: set() for model in scoped}
+    graph: dict[type[models.Model], set[type[models.Model]]] = {
+        model: set() for model in scoped
+    }
     for model in scoped:
         for f in protectors.get(model, []):
             referrer = f.model._meta.concrete_model
@@ -197,7 +226,9 @@ class _Refused(Exception):
 
 
 class _Pruner:
-    def __init__(self, organizations: list[models.Model], *, batch_size: int, max_cascade: int) -> None:
+    def __init__(
+        self, organizations: list[models.Model], *, batch_size: int, max_cascade: int
+    ) -> None:
         self.organizations = organizations
         self.pruned = {org.pk for org in organizations}
         self.batch_size = batch_size
@@ -227,25 +258,39 @@ class _Pruner:
                     rows = self._unprotected(model, rows)
                 pks = list(rows.order_by("pk").values_list("pk", flat=True))
                 for start in range(0, len(pks), self.batch_size):
-                    progress += self._chunk(model, org, pks[start : start + self.batch_size])
+                    progress += self._chunk(
+                        model, org, pks[start : start + self.batch_size]
+                    )
         return progress
 
-    def _unprotected(self, model: type[models.Model], rows: models.QuerySet) -> models.QuerySet:
+    def _unprotected(
+        self, model: type[models.Model], rows: models.QuerySet
+    ) -> models.QuerySet:
         """The rows no PROTECT or RESTRICT foreign key points at any more."""
         for f in self.protectors.get(model._meta.concrete_model, []):
             target = f.target_field.attname
-            referring = _rows(f.model).filter(**{f"{f.attname}__isnull": False}).values(f.attname)
+            referring = (
+                _rows(f.model)
+                .filter(**{f"{f.attname}__isnull": False})
+                .values(f.attname)
+            )
             rows = rows.exclude(**{f"{target}__in": referring})
         return rows
 
-    def _chunk(self, model: type[models.Model], org: models.Model, pks: list[object]) -> int:
+    def _chunk(
+        self, model: type[models.Model], org: models.Model, pks: list[object]
+    ) -> int:
         using = router.db_for_write(model) or DEFAULT_DB_ALIAS
         try:
             with transaction.atomic(using=using):
                 chunk = _rows(model).filter(pk__in=pks)
                 collector = Collector(using=using, origin=chunk)
                 collector.collect(chunk)
-                self._check(collector, single=len(pks) == 1, label=f"{model._meta.label} {pks[0]}")
+                self._check(
+                    collector,
+                    single=len(pks) == 1,
+                    label=f"{model._meta.label} {pks[0]}",
+                )
                 for collected, rows in _going(collector):
                     pruning.send(sender=collected, rows=rows, organization=org)
                 _, per_model = collector.delete()
@@ -262,7 +307,9 @@ class _Pruner:
                     counts[label] = counts.get(label, 0) + n
             return sum(per_model.values())
         if len(pks) == 1:
-            self.report.blocked.append(Blocked(model._meta.label, pks[0], str(org), reason))
+            self.report.blocked.append(
+                Blocked(model._meta.label, pks[0], str(org), reason)
+            )
             return 0
         half = len(pks) // 2
         return self._chunk(model, org, pks[:half]) + self._chunk(model, org, pks[half:])
@@ -272,10 +319,21 @@ class _Pruner:
         for collected, rows in _going(collector):
             size += rows.count()
             for lookup in _owners(collected):
-                foreign = rows.filter(**{f"{lookup}__isnull": False}).exclude(**{f"{lookup}__in": self.pruned}).values_list("pk", flat=True).first()
+                foreign = (
+                    rows.filter(**{f"{lookup}__isnull": False})
+                    .exclude(**{f"{lookup}__in": self.pruned})
+                    .values_list("pk", flat=True)
+                    .first()
+                )
                 if foreign is not None:
-                    through = "" if "__" not in lookup else f" (through {lookup.rsplit('__', 1)[0]})"
-                    raise _Refused(f"would take {collected._meta.label} {foreign}, of another organization{through}, along")
+                    through = (
+                        ""
+                        if "__" not in lookup
+                        else f" (through {lookup.rsplit('__', 1)[0]})"
+                    )
+                    raise _Refused(
+                        f"would take {collected._meta.label} {foreign}, of another organization{through}, along"
+                    )
         if size > self.max_cascade:
             if not single:
                 raise _Refused(f"cascades into {size} rows")
@@ -296,7 +354,11 @@ def _owners(model: type[models.Model], depth: int = 2) -> list[str]:
         return [f.attname for f in own]
     found = []
     for f in model._meta.concrete_fields:
-        if not isinstance(f, models.ForeignKey) or f.remote_field.on_delete is not CASCADE or f.remote_field.parent_link:
+        if (
+            not isinstance(f, models.ForeignKey)
+            or f.remote_field.on_delete is not CASCADE
+            or f.remote_field.parent_link
+        ):
             continue
         parent = f.remote_field.model
         if parent._meta.app_label == IDENTITY_APP:
@@ -309,7 +371,9 @@ def _owners(model: type[models.Model], depth: int = 2) -> list[str]:
     return found
 
 
-def _going(collector: Collector) -> Iterable[tuple[type[models.Model], models.QuerySet]]:
+def _going(
+    collector: Collector,
+) -> Iterable[tuple[type[models.Model], models.QuerySet]]:
     """What a collector is about to delete, per model, as querysets (read before the delete)."""
     for collected, instances in collector.data.items():
         yield collected, _rows(collected).filter(pk__in=[i.pk for i in instances])
@@ -322,6 +386,11 @@ def _sample(objects: Iterable[models.Model]) -> str:
     return ", ".join(listed) or "something"
 
 
-def prune(organizations: list[models.Model], *, batch_size: int = 500, max_cascade: int = 20_000) -> PruneReport:
+def prune(
+    organizations: list[models.Model],
+    *,
+    batch_size: int = 500,
+    max_cascade: int = 20_000,
+) -> PruneReport:
     """Delete every row ``organizations`` own; see the module for how. Running it again finishes what is left."""
     return _Pruner(organizations, batch_size=batch_size, max_cascade=max_cascade).run()

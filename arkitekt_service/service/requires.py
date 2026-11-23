@@ -22,7 +22,17 @@ from typing import Protocol
 
 from django.db.models import Q
 
-OPERATORS = ("EQUALS", "MATCHES", "NOT_EQUALS", "GTE", "LTE", "EXISTS", "CONTAINS", "IN", "NOT_IN")
+OPERATORS = (
+    "EQUALS",
+    "MATCHES",
+    "NOT_EQUALS",
+    "GTE",
+    "LTE",
+    "EXISTS",
+    "CONTAINS",
+    "IN",
+    "NOT_IN",
+)
 
 #: JSON as a constraint carries it.
 Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -45,20 +55,26 @@ def _operator(constraint: Constraint) -> str:
     operator = constraint.operator
     name = operator.value if isinstance(operator, Enum) else operator
     if name not in OPERATORS:
-        raise ValueError(f"{name!r} is not a descriptor operator: one of {', '.join(OPERATORS)}.")
+        raise ValueError(
+            f"{name!r} is not a descriptor operator: one of {', '.join(OPERATORS)}."
+        )
     return str(name)
 
 
 def _listed(constraint: Constraint, operator: str) -> list[Json]:
     if not isinstance(constraint.value, list):
-        raise ValueError(f"{operator} on {constraint.key} takes a list of values, got {constraint.value!r}.")  # noqa: TRY004 - a bad input, answered as one
+        raise ValueError(  # noqa: TRY004 - a bad input, answered as one
+            f"{operator} on {constraint.key} takes a list of values, got {constraint.value!r}."
+        )
     return constraint.value
 
 
 def _number(constraint: Constraint, operator: str) -> int | float:
     value = constraint.value
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{operator} on {constraint.key} takes a number, got {value!r}.")  # noqa: TRY004 - a bad input, answered as one
+        raise ValueError(  # noqa: TRY004 - a bad input, answered as one
+            f"{operator} on {constraint.key} takes a number, got {value!r}."
+        )
     return value
 
 
@@ -83,9 +99,15 @@ def constraint_q(constraint: Constraint, column: str = "stored_descriptors") -> 
     if operator == "NOT_EQUALS":
         return present & ~Q(**{f"{column}__contains": {key: value}})
     if operator == "IN":
-        return _any(Q(**{f"{column}__contains": {key: member}}) for member in _listed(constraint, operator))
+        return _any(
+            Q(**{f"{column}__contains": {key: member}})
+            for member in _listed(constraint, operator)
+        )
     if operator == "NOT_IN":
-        return present & ~_any(Q(**{f"{column}__contains": {key: member}}) for member in _listed(constraint, operator))
+        return present & ~_any(
+            Q(**{f"{column}__contains": {key: member}})
+            for member in _listed(constraint, operator)
+        )
     if operator == "CONTAINS":
         return Q(**{f"{column}__contains": {key: [value]}})
     if operator == "EXISTS":
@@ -97,7 +119,9 @@ def constraint_q(constraint: Constraint, column: str = "stored_descriptors") -> 
     return present & Q(**{f"{column}__{key}__{lookup}": _number(constraint, operator)})
 
 
-def requires_q(constraints: Sequence[Constraint], *, keys: Iterable[str], prefix: str = "") -> Q:
+def requires_q(
+    constraints: Sequence[Constraint], *, keys: Iterable[str], prefix: str = ""
+) -> Q:
     """The rows satisfying every one of these constraints, among those whose structure declares ``keys``.
 
     ``prefix`` is the path to the described row, for a filter on a relation (``"dataset__"``).
@@ -107,6 +131,8 @@ def requires_q(constraints: Sequence[Constraint], *, keys: Iterable[str], prefix
     condition = Q()
     for constraint in constraints:
         if constraint.key not in declared:
-            raise ValueError(f"{constraint.key!r} is not a descriptor here: the structure declares {sorted(declared)}.")
+            raise ValueError(
+                f"{constraint.key!r} is not a descriptor here: the structure declares {sorted(declared)}."
+            )
         condition &= constraint_q(constraint, f"{prefix}stored_descriptors")
     return condition

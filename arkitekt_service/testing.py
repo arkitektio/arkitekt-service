@@ -55,7 +55,9 @@ def _konstruktor_plugins() -> list[str]:
         import konstruktor.pytest_plugin  # noqa: F401  # pyright: ignore[reportMissingImports]
     except ImportError:
         return []
-    if not os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") and any(entry.value == _KONSTRUKTOR_PLUGIN for entry in entry_points(group="pytest11")):
+    if not os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") and any(
+        entry.value == _KONSTRUKTOR_PLUGIN for entry in entry_points(group="pytest11")
+    ):
         return []
     return [_KONSTRUKTOR_PLUGIN]
 
@@ -69,11 +71,18 @@ MANDATE_KEY = "urn:fakts:grant-type:mandate-key"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.getgroup("arkitekt-service").addoption("--service-image", default=None, help=f"The image `service_hub` runs (default: ${IMAGE}).")
+    parser.getgroup("arkitekt-service").addoption(
+        "--service-image",
+        default=None,
+        help=f"The image `service_hub` runs (default: ${IMAGE}).",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "hub: needs a hub started for the tests (Docker and konstruktor): end to end, not for the dev loop")
+    config.addinivalue_line(
+        "markers",
+        "hub: needs a hub started for the tests (Docker and konstruktor): end to end, not for the dev loop",
+    )
 
 
 @dataclass(frozen=True)
@@ -95,8 +104,17 @@ class ServiceHub:
 
     def graphql(self, query: str, *, token: str | None = None) -> dict[str, Any]:
         """One GraphQL request to the service; with ``token`` as the app it was issued to."""
-        headers = {"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}
-        return _json(urllib.request.Request(f"{self.url}/graphql", data=json.dumps({"query": query}).encode(), headers=headers))
+        headers = {
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {token}"} if token else {}),
+        }
+        return _json(
+            urllib.request.Request(
+                f"{self.url}/graphql",
+                data=json.dumps({"query": query}).encode(),
+                headers=headers,
+            )
+        )
 
 
 def _json(request: urllib.request.Request | str) -> dict[str, Any]:
@@ -119,10 +137,20 @@ def mandate_key_grant(hub: Hub, service: str, *, app: str = "smoke") -> str:
         "scopes": ["openid"],
         "requirements": [{"key": service, "service": hub.services[service].identifier}],
     }
-    body = urllib.parse.urlencode({"grant_type": MANDATE_KEY, "key": hub.mandate_key(app), "manifest": json.dumps(manifest)}).encode()
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": MANDATE_KEY,
+            "key": hub.mandate_key(app),
+            "manifest": json.dumps(manifest),
+        }
+    ).encode()
     grant = _json(urllib.request.Request(well_known["token_endpoint"], data=body))
-    assert "access_token" in grant, f"the hub's coordination server issued no token for {service}: {grant}"
-    assert grant.get("statuses", {}).get(service) == "granted", f"{service} was not granted to the app: {grant.get('statuses')}"
+    assert "access_token" in grant, (
+        f"the hub's coordination server issued no token for {service}: {grant}"
+    )
+    assert grant.get("statuses", {}).get(service) == "granted", (
+        f"{service} was not granted to the app: {grant.get('statuses')}"
+    )
     return grant["access_token"]
 
 
@@ -131,8 +159,17 @@ def _restarts(running: ServiceHub) -> int | None:
     containers = running.hub.ps(services=[running.service])
     if not containers:
         return None
-    said = subprocess.run(["docker", "inspect", "-f", "{{.RestartCount}}", containers[0].name], capture_output=True, text=True, check=False)
-    return int(said.stdout.strip()) if said.returncode == 0 and said.stdout.strip().isdigit() else None
+    said = subprocess.run(
+        ["docker", "inspect", "-f", "{{.RestartCount}}", containers[0].name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return (
+        int(said.stdout.strip())
+        if said.returncode == 0 and said.stdout.strip().isdigit()
+        else None
+    )
 
 
 def check_service(running: ServiceHub, *, admin: bool = True) -> None:
@@ -146,23 +183,31 @@ def check_service(running: ServiceHub, *, admin: bool = True) -> None:
     """
     hub, service = running.hub, running.service
     not_ready = [endpoint for endpoint in hub.wait_ready(180) if not endpoint.ready]
-    assert not not_ready, f"not ready: {', '.join(endpoint.name for endpoint in not_ready)}\n{hub.logs(service).stdout}"
+    assert not not_ready, (
+        f"not ready: {', '.join(endpoint.name for endpoint in not_ready)}\n{hub.logs(service).stdout}"
+    )
 
     with urllib.request.urlopen(hub.services[service].health_url, timeout=30) as health:
         assert health.status == 200
 
     anonymous = running.graphql("{ __typename }")
-    assert anonymous.get("data") is None, f"{service} answered a request that carried no token: {anonymous}"
+    assert anonymous.get("data") is None, (
+        f"{service} answered a request that carried no token: {anonymous}"
+    )
 
     answer = running.graphql("{ __typename }", token=running.token())
-    assert answer.get("data") == {"__typename": "Query"} and "errors" not in answer, f"{service} refused a token its own hub issued: {answer}"
+    assert answer.get("data") == {"__typename": "Query"} and "errors" not in answer, (
+        f"{service} refused a token its own hub issued: {answer}"
+    )
 
     hub.job(service, "plan")
     if admin:
         hub.superuser(service, "smoke", "smoke-pass-1")
 
     restarts = _restarts(running)
-    assert not restarts, f"{service} restarted {restarts} time(s) before it served:\n{hub.logs(service).stdout}"
+    assert not restarts, (
+        f"{service} restarted {restarts} time(s) before it served:\n{hub.logs(service).stdout}"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -175,11 +220,17 @@ def service_image(pytestconfig: pytest.Config) -> str:
 
 
 @pytest.fixture(scope="session")
-def service_hub(request: pytest.FixtureRequest, service_image: str) -> Iterator[ServiceHub]:
+def service_hub(
+    request: pytest.FixtureRequest, service_image: str
+) -> Iterator[ServiceHub]:
     """A hub for the session that runs the image under test, and a coordination server."""
-    konstruktor = pytest.importorskip("konstruktor", reason="the hub is made by konstruktor: pip install konstruktor")
+    konstruktor = pytest.importorskip(
+        "konstruktor", reason="the hub is made by konstruktor: pip install konstruktor"
+    )
     if not hasattr(konstruktor, "testing_hub"):
-        pytest.skip("the hub is made by konstruktor 0.17 or newer, and an older one is installed: pip install -U konstruktor")
+        pytest.skip(
+            "the hub is made by konstruktor 0.17 or newer, and an older one is installed: pip install -U konstruktor"
+        )
     make = request.getfixturevalue("konstruktor_hub")
     hub: Hub = make(service_images=[service_image], mandate_keys=4)
     services = [name for name in hub.services if name != "lok"]

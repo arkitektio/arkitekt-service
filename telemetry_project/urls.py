@@ -8,7 +8,13 @@ from django.urls import path
 
 def modules(request: HttpRequest) -> JsonResponse:
     """Whether OpenTelemetry's SDK is in this process."""
-    return JsonResponse({"sdk": sorted(name for name in sys.modules if name.startswith("opentelemetry.sdk"))})
+    return JsonResponse(
+        {
+            "sdk": sorted(
+                name for name in sys.modules if name.startswith("opentelemetry.sdk")
+            )
+        }
+    )
 
 
 def echo(request: HttpRequest) -> JsonResponse:

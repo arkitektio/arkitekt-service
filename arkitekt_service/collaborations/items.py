@@ -28,7 +28,13 @@ def _key(obj: Any) -> tuple[type, str]:
     return (type(obj), str(obj.pk))
 
 
-def _bring(collaboration: Collaboration, item: CollaborationItem, obj: Any, by: Any, seen: set[tuple[type, str]]) -> None:
+def _bring(
+    collaboration: Collaboration,
+    item: CollaborationItem,
+    obj: Any,
+    by: Any,
+    seen: set[tuple[type, str]],
+) -> None:
     """Put in what ``obj`` needs to be seen, and what that needs in turn, brought by ``item``."""
     from arkitekt_service.service.service import Service
 
@@ -38,7 +44,10 @@ def _bring(collaboration: Collaboration, item: CollaborationItem, obj: Any, by: 
             continue
         seen.add(_key(needed))
         brought, created = CollaborationItem.objects.get_or_create(
-            collaboration=collaboration, content_type=content_type_of(needed), object_id=str(needed.pk), defaults={"because_of": item, "added_by": by}
+            collaboration=collaboration,
+            content_type=content_type_of(needed),
+            object_id=str(needed.pk),
+            defaults={"because_of": item, "added_by": by},
         )
         if created:
             _bring(collaboration, brought, needed, by, seen)
@@ -49,7 +58,9 @@ class SharedWithItsWhole(ValueError):
 
     def __init__(self, obj: Any, whole: Any) -> None:
         self.obj, self.whole = obj, whole
-        super().__init__(f"{_name(obj)} {obj.pk} is part of {_name(whole)} {whole.pk}, and is shared with it: put that in the collaboration")
+        super().__init__(
+            f"{_name(obj)} {obj.pk} is part of {_name(whole)} {whole.pk}, and is shared with it: put that in the collaboration"
+        )
 
 
 def _name(obj: Any) -> str:
@@ -79,13 +90,23 @@ def whole_of(obj: Any) -> Any:
 
 def holds(collaboration: Collaboration, obj: Any) -> bool:
     """Whether ``obj`` is in ``collaboration``: put in, or part of something that is."""
-    if CollaborationItem.objects.filter(collaboration=collaboration, content_type=content_type_of(obj), object_id=str(obj.pk)).exists():
+    if CollaborationItem.objects.filter(
+        collaboration=collaboration,
+        content_type=content_type_of(obj),
+        object_id=str(obj.pk),
+    ).exists():
         return True
     whole = whole_of(obj)
     return whole is not None and holds(collaboration, whole)
 
 
-def add(collaboration: Collaboration, obj: Any, *, by: Any = None, because_of: CollaborationItem | None = None) -> CollaborationItem:
+def add(
+    collaboration: Collaboration,
+    obj: Any,
+    *,
+    by: Any = None,
+    because_of: CollaborationItem | None = None,
+) -> CollaborationItem:
     """Put ``obj`` in ``collaboration``, with what it needs to be seen. Put in again by hand, it stays
     when whatever brought it is taken out. Put in by hand, a part of another object is refused unless
     that one is in (:class:`SharedWithItsWhole`)."""
@@ -95,7 +116,10 @@ def add(collaboration: Collaboration, obj: Any, *, by: Any = None, because_of: C
             raise SharedWithItsWhole(obj, whole)
     with transaction.atomic():
         item, created = CollaborationItem.objects.get_or_create(
-            collaboration=collaboration, content_type=content_type_of(obj), object_id=str(obj.pk), defaults={"because_of": because_of, "added_by": by}
+            collaboration=collaboration,
+            content_type=content_type_of(obj),
+            object_id=str(obj.pk),
+            defaults={"because_of": because_of, "added_by": by},
         )
         if created:
             _bring(collaboration, item, obj, by, {_key(obj)})
@@ -110,7 +134,11 @@ def _objects(items: Any) -> list[tuple[CollaborationItem, Any]]:
     found = []
     for item in items:
         model = item.content_type.model_class()
-        obj = model._base_manager.filter(pk=item.object_id).first() if model is not None else None
+        obj = (
+            model._base_manager.filter(pk=item.object_id).first()
+            if model is not None
+            else None
+        )
         if obj is not None:
             found.append((item, obj))
     return found
@@ -120,11 +148,19 @@ def remove(collaboration: Collaboration, obj: Any) -> bool:
     """Take ``obj`` out of ``collaboration``, with what it brought, unless something still there needs it.
     Returns whether it was there."""
     with transaction.atomic():
-        deleted, _ = CollaborationItem.objects.filter(collaboration=collaboration, content_type=content_type_of(obj), object_id=str(obj.pk)).delete()
+        deleted, _ = CollaborationItem.objects.filter(
+            collaboration=collaboration,
+            content_type=content_type_of(obj),
+            object_id=str(obj.pk),
+        ).delete()
         if not deleted:
             return False
         # What another object still in the collaboration needs comes back.
-        for item, kept in _objects(collaboration.items.filter(because_of__isnull=True).select_related("content_type")):
+        for item, kept in _objects(
+            collaboration.items.filter(because_of__isnull=True).select_related(
+                "content_type"
+            )
+        ):
             _bring(collaboration, item, kept, item.added_by, {_key(kept)})
     return True
 
@@ -132,14 +168,27 @@ def remove(collaboration: Collaboration, obj: Any) -> bool:
 def refresh(obj: Any) -> None:
     """Put what ``obj`` needs now in every collaboration it is in: after a part was added that needs more
     (a layer, drawing a dataset, added to a scene in a collaboration)."""
-    for item in CollaborationItem.objects.filter(content_type=content_type_of(obj), object_id=str(obj.pk)).select_related("collaboration"):
+    for item in CollaborationItem.objects.filter(
+        content_type=content_type_of(obj), object_id=str(obj.pk)
+    ).select_related("collaboration"):
         _bring(item.collaboration, item, obj, item.added_by, {_key(obj)})
 
 
 def include(obj: Any, *, alongside: Any, by: Any = None) -> None:
     """Put ``obj`` in every collaboration ``alongside`` is in, brought by it: a collection minted for a scene."""
-    for item in CollaborationItem.objects.filter(content_type=content_type_of(alongside), object_id=str(alongside.pk)).select_related("collaboration"):
+    for item in CollaborationItem.objects.filter(
+        content_type=content_type_of(alongside), object_id=str(alongside.pk)
+    ).select_related("collaboration"):
         add(item.collaboration, obj, by=by, because_of=item)
 
 
-__all__ = ["SharedWithItsWhole", "add", "content_type_of", "holds", "include", "refresh", "remove", "whole_of"]
+__all__ = [
+    "SharedWithItsWhole",
+    "add",
+    "content_type_of",
+    "holds",
+    "include",
+    "refresh",
+    "remove",
+    "whole_of",
+]

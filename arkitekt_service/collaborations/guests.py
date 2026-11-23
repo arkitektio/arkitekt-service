@@ -51,7 +51,9 @@ def enforce() -> None:
     try:
         from authentikate.scoped import enforce_scoped
     except ImportError:
-        logger.warning("A service lets guests in, but authentikate>=5 is not installed: they stay shut out")
+        logger.warning(
+            "A service lets guests in, but authentikate>=5 is not installed: they stay shut out"
+        )
         return
     enforce_scoped()
 
@@ -89,7 +91,11 @@ def _family(model: type) -> list[type]:
     frontier = list(model.__subclasses__())
     while frontier:
         child = frontier.pop()
-        if getattr(child, "_meta", None) is not None and not child._meta.abstract and child not in found:
+        if (
+            getattr(child, "_meta", None) is not None
+            and not child._meta.abstract
+            and child not in found
+        ):
             found.append(child)
             frontier.extend(child.__subclasses__())
     return [m for m in found if not m._meta.abstract and not m._meta.proxy]
@@ -124,20 +130,30 @@ def wholes(model: type, depth: int = PART_OF_DEPTH) -> tuple[tuple[type, str], .
         return ()
     found: list[tuple[type, str]] = []
     for field in model._meta.get_fields():
-        if not isinstance(field, ForeignKey) or field.null or field.related_model in (None, model):
+        if (
+            not isinstance(field, ForeignKey)
+            or field.null
+            or field.related_model in (None, model)
+        ):
             continue
         if not _cascades(field) or _is_reference(model, field.name):
             continue
         related = field.related_model
         found.append((related, field.name))
-        found.extend((whole, f"{field.name}__{path}") for whole, path in wholes(related, depth - 1))
+        found.extend(
+            (whole, f"{field.name}__{path}")
+            for whole, path in wholes(related, depth - 1)
+        )
     return tuple(found)
 
 
 def _types_q(models: Iterable[type]) -> Q:
     condition = Q(pk__in=[])
     for model in models:
-        condition |= Q(content_type__app_label=model._meta.app_label, content_type__model=model._meta.model_name)
+        condition |= Q(
+            content_type__app_label=model._meta.app_label,
+            content_type__model=model._meta.model_name,
+        )
     return condition
 
 
@@ -152,7 +168,11 @@ class Guest:
         self.organization = organization
         granted = token.collabs_here(current_instance()) if token is not None else {}
         #: The roles held in each collaboration granted, by collaboration id (collaborations of another organization hold nothing).
-        self.roles: dict[int, frozenset[str]] = {int(collaboration): frozenset(roles) for collaboration, roles in granted.items() if str(collaboration).isdigit()}
+        self.roles: dict[int, frozenset[str]] = {
+            int(collaboration): frozenset(roles)
+            for collaboration, roles in granted.items()
+            if str(collaboration).isdigit()
+        }
         self._rows: dict[type, dict[str, frozenset[int]]] = {}
         self._held: dict[type, dict[str, set[int]]] | None = None
         self._read_at = _changes[0]
@@ -169,24 +189,39 @@ class Guest:
     def _collaborations(self) -> Any:
         from arkitekt_service.collaborations.models import Collaboration
 
-        return Collaboration.objects.filter(pk__in=list(self.roles), organization=self.organization)
+        return Collaboration.objects.filter(
+            pk__in=list(self.roles), organization=self.organization
+        )
 
     def _items(self, models: Iterable[type]) -> QuerySet[Any]:
         from arkitekt_service.collaborations.models import CollaborationItem
 
-        return CollaborationItem.objects.filter(_types_q(models), collaboration__in=self._collaborations())
+        return CollaborationItem.objects.filter(
+            _types_q(models), collaboration__in=self._collaborations()
+        )
 
     def _ids(self, model: type) -> QuerySet[Any]:
         """The ids of ``model``'s rows put in the guest's collaborations, as a subquery (``object_id`` cast to the key)."""
         pk = model._meta.pk
         output = pk.target_field if isinstance(pk, ForeignKey) else pk
-        if output.get_internal_type() in ("AutoField", "BigAutoField", "SmallAutoField"):
+        if output.get_internal_type() in (
+            "AutoField",
+            "BigAutoField",
+            "SmallAutoField",
+        ):
             output = BigIntegerField()
-        return self._items(_family(model)).annotate(key=Cast("object_id", output_field=output)).values("key")
+        return (
+            self._items(_family(model))
+            .annotate(key=Cast("object_id", output_field=output))
+            .values("key")
+        )
 
     def q(self, model: type) -> Q:
         """``model``'s rows in the guest's collaborations, as a condition: nothing is read until it is used."""
-        from arkitekt_service.collaborations.models import Collaboration, CollaborationItem
+        from arkitekt_service.collaborations.models import (
+            Collaboration,
+            CollaborationItem,
+        )
 
         if issubclass(model, Collaboration):
             return Q(pk__in=self._collaborations().values("pk"))
@@ -205,8 +240,16 @@ class Guest:
 
             from arkitekt_service.collaborations.models import CollaborationItem
 
-            held: dict[type, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
-            for content_type, collaboration, object_id in CollaborationItem.objects.filter(collaboration__in=self._collaborations()).values_list("content_type_id", "collaboration_id", "object_id"):
+            held: dict[type, dict[str, set[int]]] = defaultdict(
+                lambda: defaultdict(set)
+            )
+            for (
+                content_type,
+                collaboration,
+                object_id,
+            ) in CollaborationItem.objects.filter(
+                collaboration__in=self._collaborations()
+            ).values_list("content_type_id", "collaboration_id", "object_id"):
                 model = ContentType.objects.get_for_id(content_type).model_class()
                 if model is not None:
                     held[model][object_id].add(collaboration)
@@ -222,7 +265,10 @@ class Guest:
 
     def rows(self, model: type) -> dict[str, frozenset[int]]:
         """``model``'s rows in the guest's collaborations, by pk, with the collaborations holding each. Read once per model."""
-        from arkitekt_service.collaborations.models import Collaboration, CollaborationItem
+        from arkitekt_service.collaborations.models import (
+            Collaboration,
+            CollaborationItem,
+        )
 
         self._fresh()
         if model in self._rows:
@@ -232,7 +278,9 @@ class Guest:
             for pk in self._collaborations().values_list("pk", flat=True):
                 held[str(pk)].add(pk)
         elif issubclass(model, CollaborationItem):
-            for pk, collaboration in CollaborationItem.objects.filter(collaboration__in=self._collaborations()).values_list("pk", "collaboration_id"):
+            for pk, collaboration in CollaborationItem.objects.filter(
+                collaboration__in=self._collaborations()
+            ).values_list("pk", "collaboration_id"):
                 held[str(pk)].add(collaboration)
         else:
             family = _family(model)
@@ -244,9 +292,13 @@ class Guest:
                     collaborations_of = self._put_in(_family(whole))
                     if not collaborations_of:
                         continue
-                    for pk, root in kind._base_manager.filter(**{f"{path}__in": self._ids(whole)}).values_list("pk", path):
+                    for pk, root in kind._base_manager.filter(
+                        **{f"{path}__in": self._ids(whole)}
+                    ).values_list("pk", path):
                         held[str(pk)] |= collaborations_of.get(str(root), set())
-        self._rows[model] = {pk: frozenset(collaborations) for pk, collaborations in held.items()}
+        self._rows[model] = {
+            pk: frozenset(collaborations) for pk, collaborations in held.items()
+        }
         return self._rows[model]
 
     def knows(self, model: type) -> bool:
@@ -257,7 +309,9 @@ class Guest:
         """Whether ``obj`` is in one of the guest's collaborations."""
         return str(obj.pk) in self.rows(type(obj))
 
-    def holds(self, obj: Model, *, roles: Iterable[str] = (), any_role_of: Iterable[str] = ()) -> bool:
+    def holds(
+        self, obj: Model, *, roles: Iterable[str] = (), any_role_of: Iterable[str] = ()
+    ) -> bool:
         """Whether ``obj`` is in a collaboration of the guest's where they hold ``roles`` (all) and one of ``any_role_of``."""
         every, one_of = set(roles), set(any_role_of)
         for collaboration in self.rows(type(obj)).get(str(obj.pk), ()):
@@ -277,7 +331,9 @@ def guest_of(info: Any = None, token: Any = None) -> Guest | None:
     if kept is not None and kept.token is token:
         return kept
     request = getattr(getattr(info, "context", None), "request", None)
-    organization = getattr(request, "_organization", None) if request is not None else None
+    organization = (
+        getattr(request, "_organization", None) if request is not None else None
+    )
     if organization is None:
         from authentikate.vars import organization_var
 
@@ -300,7 +356,9 @@ def served(reset: Token[Guest | None] | None) -> None:
         return
     try:
         _operation.reset(reset)
-    except ValueError:  # closed from another context (a WebSocket gone): nothing of it is left here
+    except (
+        ValueError
+    ):  # closed from another context (a WebSocket gone): nothing of it is left here
         pass
 
 
@@ -315,15 +373,25 @@ def at_root(info: Any) -> bool:
     parent, schema = getattr(raw, "parent_type", None), getattr(raw, "schema", None)
     if parent is None or schema is None:
         return True  # nothing says it is nested: narrow
-    if parent not in (schema.query_type, schema.mutation_type, schema.subscription_type):
+    if parent not in (
+        schema.query_type,
+        schema.mutation_type,
+        schema.subscription_type,
+    ):
         return False
     field = getattr(info, "_field", None)
     entered = parent.fields.get(getattr(raw, "field_name", ""))
-    definition = (entered.extensions or {}).get("strawberry-definition") if entered is not None else None
+    definition = (
+        (entered.extensions or {}).get("strawberry-definition")
+        if entered is not None
+        else None
+    )
     return field is None or definition is None or definition is field
 
 
-def object_scope(queryset: QuerySet[Any], token: Any = None, *, info: Any = None) -> QuerySet[Any]:
+def object_scope(
+    queryset: QuerySet[Any], token: Any = None, *, info: Any = None
+) -> QuerySet[Any]:
     """``queryset``, held to the request's guest's collaborations when it is a guest's.
 
     A full member's (or no token: work outside a request) is returned as it is. Given the resolve
@@ -348,7 +416,14 @@ def kante_narrow(queryset: QuerySet[Any], info: Any) -> QuerySet[Any]:
     return object_scope(queryset, token, info=info)
 
 
-def require_in_collaboration(obj: Model, *, any_role_of: Iterable[str] | None = None, roles: Iterable[str] | None = None, info: Any = None, token: Any = None) -> None:
+def require_in_collaboration(
+    obj: Model,
+    *,
+    any_role_of: Iterable[str] | None = None,
+    roles: Iterable[str] | None = None,
+    info: Any = None,
+    token: Any = None,
+) -> None:
     """Refuse a guest's write to ``obj`` unless it is in a collaboration of theirs where they hold the roles
     (``roles``, all; ``any_role_of``, one). A full member passes: their own roles were checked.
     Raises authentikate's ``ShareInsufficient`` (a 403)."""
@@ -358,7 +433,9 @@ def require_in_collaboration(obj: Model, *, any_role_of: Iterable[str] | None = 
     if not guest.holds(obj, roles=roles or (), any_role_of=any_role_of or ()):
         from authentikate.errors import ShareInsufficient
 
-        raise ShareInsufficient(f"{type(obj).__name__} {obj.pk} is in no collaboration of {getattr(guest.token, 'sub', '?')}'s that permits this")
+        raise ShareInsufficient(
+            f"{type(obj).__name__} {obj.pk} is in no collaboration of {getattr(guest.token, 'sub', '?')}'s that permits this"
+        )
 
 
 async def arequire_in_collaboration(obj: Model, **kwargs: Any) -> None:

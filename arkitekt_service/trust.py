@@ -70,18 +70,29 @@ def hub_id() -> str | None:
 
 
 def body_hash(body: bytes) -> str:
-    return base64.urlsafe_b64encode(hashlib.sha256(body).digest()).rstrip(b"=").decode("ascii")
+    return (
+        base64.urlsafe_b64encode(hashlib.sha256(body).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
 
 
 def public_jwk(key: OKPKey) -> dict[str, Any]:
     """The public JWK of ``key`` with its thumbprint as ``kid`` — what a trust bundle lists."""
-    return {**key.as_dict(private=False), "kid": key.thumbprint(), "use": "sig", "alg": ALGORITHM}
+    return {
+        **key.as_dict(private=False),
+        "kid": key.thumbprint(),
+        "use": "sig",
+        "alg": ALGORITHM,
+    }
 
 
 def raw_public_key_b64(key: OKPKey) -> str:
     """The raw 32-byte public key, base64 — the fakts manifest's ``challenge_key``."""
     x = key.as_dict(private=False)["x"]
-    return base64.b64encode(base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))).decode("ascii")
+    return base64.b64encode(base64.urlsafe_b64decode(x + "=" * (-len(x) % 4))).decode(
+        "ascii"
+    )
 
 
 # --- this instance's key ---------------------------------------------------------------------
@@ -125,7 +136,9 @@ def sign_challenge(nonce: str, key: OKPKey | None = None) -> str | None:
     key = key or instance_key()
     if key is None:
         return None
-    return base64.b64encode(key.private_key.sign(f"{CHALLENGE_DOMAIN}:{nonce}".encode())).decode("ascii")
+    return base64.b64encode(
+        key.private_key.sign(f"{CHALLENGE_DOMAIN}:{nonce}".encode())
+    ).decode("ascii")
 
 
 # --- the trust bundle ------------------------------------------------------------------------
@@ -148,7 +161,11 @@ class TrustBundle:
     def _load(self, jwks: dict[str, Any]) -> None:
         keys = {}
         for jwk in jwks.get("keys") or []:
-            if jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519" and jwk.get("kid"):
+            if (
+                jwk.get("kty") == "OKP"
+                and jwk.get("crv") == "Ed25519"
+                and jwk.get("kid")
+            ):
                 keys[jwk["kid"]] = jwk
         self._keys = keys
 
@@ -165,18 +182,30 @@ class TrustBundle:
         with self._lock:
             source = (uri, id(inline) if inline is not None else None)
             if source != self._source:
-                self._source, self._keys, self._fetched_at, self._last_attempt = source, {}, 0.0, 0.0
+                self._source, self._keys, self._fetched_at, self._last_attempt = (
+                    source,
+                    {},
+                    0.0,
+                    0.0,
+                )
                 if inline is not None:
                     self._load(inline)
             if uri:
                 now = time.monotonic()
                 stale = now - self._fetched_at > BUNDLE_TTL_SECONDS
-                missing = kid not in self._keys and now - self._last_attempt > REFETCH_MIN_SECONDS
+                missing = (
+                    kid not in self._keys
+                    and now - self._last_attempt > REFETCH_MIN_SECONDS
+                )
                 if stale or missing:
                     try:
                         self._fetch(uri)
                     except Exception as error:  # noqa: BLE001  keep the last bundle; a coord outage must not drop trust
-                        logger.warning("Could not fetch the hub trust bundle from %s: %s", uri, error)
+                        logger.warning(
+                            "Could not fetch the hub trust bundle from %s: %s",
+                            uri,
+                            error,
+                        )
             return self._keys.get(kid)
 
 
@@ -186,7 +215,16 @@ trust_bundle = TrustBundle()
 # --- signing and verifying -------------------------------------------------------------------
 
 
-def sign(method: str, path: str, body: bytes, *, issuer: str, audience: str, key: OKPKey | None = None, hub: str | None = None) -> str:
+def sign(
+    method: str,
+    path: str,
+    body: bytes,
+    *,
+    issuer: str,
+    audience: str,
+    key: OKPKey | None = None,
+    hub: str | None = None,
+) -> str:
     """The ``Authorization`` header value for a request from ``issuer`` to ``audience``.
 
     Signed with this instance's key, or with ``key`` when given, for this process's hub
@@ -194,7 +232,9 @@ def sign(method: str, path: str, body: bytes, *, issuer: str, audience: str, key
     """
     key = key or instance_key()
     if key is None:
-        raise TrustError("No instance key configured (settings.INSTANCE['PRIVATE_KEY'])")
+        raise TrustError(
+            "No instance key configured (settings.INSTANCE['PRIVATE_KEY'])"
+        )
     now = int(time.time())
     claims = {
         "iss": issuer,
@@ -223,7 +263,16 @@ class Verified:
     hub: str | None = None
 
 
-def verify(method: str, path: str, body: bytes, authorization: str | None, *, audience: str, max_skew: int = 30, hub: str | None = None) -> Verified:
+def verify(
+    method: str,
+    path: str,
+    body: bytes,
+    authorization: str | None,
+    *,
+    audience: str,
+    max_skew: int = 30,
+    hub: str | None = None,
+) -> Verified:
     """Check a request's service JWT; the sender, or ``TrustError``.
 
     When this process knows its hub (:func:`hub_id`, or ``hub`` when given), the token must be
@@ -239,7 +288,9 @@ def verify(method: str, path: str, body: bytes, authorization: str | None, *, au
     if jwk is None:
         raise TrustError(f"No key {kid} in the hub's trust bundle")
     try:
-        decoded = jwt.decode(token, KeySet.import_key_set({"keys": [jwk]}), algorithms=[ALGORITHM])
+        decoded = jwt.decode(
+            token, KeySet.import_key_set({"keys": [jwk]}), algorithms=[ALGORITHM]
+        )
     except Exception as error:  # noqa: BLE001
         raise TrustError(f"Bad service token signature: {error}") from None
     if decoded.header.get("typ") != TYP:
@@ -248,11 +299,19 @@ def verify(method: str, path: str, body: bytes, authorization: str | None, *, au
     now = int(time.time())
     issuer = claims.get("iss")
     if not issuer or jwk.get("service") != issuer:
-        raise TrustError(f"Key {kid} belongs to {jwk.get('service')!r}, not to {issuer!r}")
+        raise TrustError(
+            f"Key {kid} belongs to {jwk.get('service')!r}, not to {issuer!r}"
+        )
     if claims.get("aud") != audience:
         raise TrustError(f"Token is for {claims.get('aud')!r}, not {audience!r}")
     exp, iat = claims.get("exp"), claims.get("iat")
-    if not isinstance(exp, int) or not isinstance(iat, int) or exp < now - max_skew or iat > now + max_skew or exp - iat > LIFETIME_SECONDS + max_skew:
+    if (
+        not isinstance(exp, int)
+        or not isinstance(iat, int)
+        or exp < now - max_skew
+        or iat > now + max_skew
+        or exp - iat > LIFETIME_SECONDS + max_skew
+    ):
         raise TrustError("Service token expired or not yet valid")
     if claims.get("htm") != method.upper() or claims.get("htu") != path:
         raise TrustError("Service token was signed for another request")
@@ -263,7 +322,9 @@ def verify(method: str, path: str, body: bytes, authorization: str | None, *, au
     own = hub or hub_id()
     if own is not None and claims.get("hub") != own:
         raise TrustError(f"Token is for hub {claims.get('hub')!r}, not this hub")
-    return Verified(issuer=issuer, jti=str(claims["jti"]), expires_at=exp, hub=claims.get("hub"))
+    return Verified(
+        issuer=issuer, jti=str(claims["jti"]), expires_at=exp, hub=claims.get("hub")
+    )
 
 
 def _unverified_kid(token: str) -> str | None:
@@ -272,6 +333,8 @@ def _unverified_kid(token: str) -> str | None:
 
     try:
         segment = token.split(".", 1)[0]
-        return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))).get("kid")
+        return json.loads(
+            base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4))
+        ).get("kid")
     except Exception:  # noqa: BLE001
         return None

@@ -73,7 +73,9 @@ def _service_name() -> str:
         return os.environ.get("DJANGO_SETTINGS_MODULE", "service").split(".")[0]
 
 
-def setup(settings: TelemetrySettings | None = None, *, service_name: str | None = None) -> bool:
+def setup(
+    settings: TelemetrySettings | None = None, *, service_name: str | None = None
+) -> bool:
     """Start recording, when the config names a collector; whether it did.
 
     Called once, by the process that serves, before Django's application is built: a job
@@ -89,7 +91,9 @@ def setup(settings: TelemetrySettings | None = None, *, service_name: str | None
     base = conf.endpoint.rstrip("/")
 
     from opentelemetry import metrics, trace
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+        OTLPMetricExporter,
+    )
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
     from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
@@ -101,17 +105,31 @@ def setup(settings: TelemetrySettings | None = None, *, service_name: str | None
     from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
     resource = Resource.create({"service.name": name})
-    tracers = TracerProvider(sampler=ParentBased(TraceIdRatioBased(conf.sample_ratio)), resource=resource)
-    tracers.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{base}/v1/traces")))
+    tracers = TracerProvider(
+        sampler=ParentBased(TraceIdRatioBased(conf.sample_ratio)), resource=resource
+    )
+    tracers.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{base}/v1/traces"))
+    )
     trace.set_tracer_provider(tracers)
     if conf.metrics:
-        reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"))
-        metrics.set_meter_provider(MeterProvider(metric_readers=[reader], resource=resource))
+        reader = PeriodicExportingMetricReader(
+            OTLPMetricExporter(endpoint=f"{base}/v1/metrics")
+        )
+        metrics.set_meter_provider(
+            MeterProvider(metric_readers=[reader], resource=resource)
+        )
     if conf.statements:
         PsycopgInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
     _recording = True
-    logger.info("Telemetry of %s goes to %s (%d%% of traces%s)", name, base, round(conf.sample_ratio * 100), ", with metrics" if conf.metrics else "")
+    logger.info(
+        "Telemetry of %s goes to %s (%d%% of traces%s)",
+        name,
+        base,
+        round(conf.sample_ratio * 100),
+        ", with metrics" if conf.metrics else "",
+    )
     return True
 
 
@@ -151,14 +169,20 @@ def wrap(application: Application) -> Application:
 def _traced(application: Application) -> Application:
     from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
 
-    return OpenTelemetryMiddleware(application, excluded_urls=EXCLUDED_URLS, exclude_spans=["receive", "send"])
+    return OpenTelemetryMiddleware(
+        application, excluded_urls=EXCLUDED_URLS, exclude_spans=["receive", "send"]
+    )
 
 
 def _following(application: Application) -> Application:
     """Not recording: a request that came inside a trace still runs inside it, for what it asks of others."""
 
     async def followed(scope: Scope, receive: Receive, send: Send) -> None:
-        carrier = {name.decode("latin-1"): value.decode("latin-1") for name, value in scope.get("headers", ()) if name in TRACE_HEADERS}
+        carrier = {
+            name.decode("latin-1"): value.decode("latin-1")
+            for name, value in scope.get("headers", ())
+            if name in TRACE_HEADERS
+        }
         if not carrier:
             await application(scope, receive, send)
             return
@@ -181,7 +205,11 @@ def continuing(traceparent: str | None, name: str) -> Iterator[None]:
     """
     from opentelemetry import trace
 
-    entered = context.attach(propagate.extract({"traceparent": traceparent})) if traceparent else None
+    entered = (
+        context.attach(propagate.extract({"traceparent": traceparent}))
+        if traceparent
+        else None
+    )
     try:
         with trace.get_tracer(SCOPE).start_as_current_span(name):
             yield
