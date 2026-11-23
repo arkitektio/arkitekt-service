@@ -24,10 +24,10 @@ arkitekt-service = "arkitekt_service.contract.cli:main"
 [project.optional-dependencies]
 # Forwarding the provenance token of the request a signal is emitted in reads koherent's
 # context variable; without koherent, signals simply carry no token.
-koherent = ["koherent>=4.1"]
+koherent = ["koherent>=4.3"]
 # Collaborations (arkitekt_service.collaborations: what a guest is let in to) and the gate in arkitekt_service.graphql
 # read the request's token, and tell authentikate its guests are served here; without it, guests stay out.
-authentikate = ["authentikate>=6.1"]
+authentikate = ["authentikate>=7.0"]
 # Recording and sending traces and metrics (arkitekt_service.telemetry), once a config names a collector.
 telemetry = [
     "opentelemetry-sdk>=1.30",
