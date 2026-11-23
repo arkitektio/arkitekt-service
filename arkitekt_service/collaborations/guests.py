@@ -1,7 +1,7 @@
 """A guest's request: the collaborations granted to them here, and what is in them.
 
-A guest's token lists their collaborations by service instance, with the roles they hold in each
-(authentikate's ``collabs``). Here that is a :class:`Guest`, one per request: which of those
+A guest's token lists their collaborations by key, one across the hub, with the roles they hold in
+each (authentikate's ``collabs``). Here that is a :class:`Guest`, one per request: which of those
 collaborations are this organization's, and, per model, which rows are in which of them — put in
 (:mod:`.items`), or part of something put in (:func:`~arkitekt_service.service.structures.part_of`,
 live). Every read is held to it:
@@ -13,8 +13,9 @@ live). Every read is held to it:
 - a write checks its target (:func:`require_in_collaboration`), with the roles the guest holds in a
   collaboration that holds it.
 
-The instance a token's collaborations are read for is this service's ``AUTHENTIKATE.audience``
-(rendered by konstruktor): a service whose audience is ``*`` serves no guests.
+A key names lok's collaboration; here it is the row with that key (``Collaboration.key``) of the
+request's organization, made when something was first put in. A key nothing was put in here
+holds nothing here.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from collections.abc import Iterable
 from contextvars import ContextVar, Token
 from functools import cache
 from typing import TYPE_CHECKING, Any, Protocol
+from uuid import UUID
 
 from django.db.models import CASCADE, BigIntegerField, ForeignKey, Model, Q, QuerySet
 from django.db.models.functions import Cast
@@ -78,12 +80,13 @@ def current_token() -> JWTToken | None:
     return token_var.get()
 
 
-def current_instance() -> str | None:
-    """This service instance, whose entry of a guest's ``collabs`` is read."""
-    from authentikate.scoped import current_instance as configured
-    from authentikate.settings import get_settings
-
-    return configured(get_settings())
+def _is_key(value: str) -> bool:
+    """Whether ``value`` reads as a collaboration key: anything else names nothing here."""
+    try:
+        UUID(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 # --- what is part of what --------------------------------------------------------------------
@@ -161,6 +164,50 @@ def _types_q(models: Iterable[type]) -> Q:
     return condition
 
 
+# --- what a collaboration holds -------------------------------------------------------------
+
+
+def _ids(model: type, collaborations: QuerySet[Any]) -> QuerySet[Any]:
+    """The ids of ``model``'s rows put in ``collaborations``, as a subquery (``object_id`` cast to the key)."""
+    from arkitekt_service.collaborations.models import CollaborationItem
+
+    pk = model._meta.pk
+    output = pk.target_field if isinstance(pk, ForeignKey) else pk
+    if output.get_internal_type() in (
+        "AutoField",
+        "BigAutoField",
+        "SmallAutoField",
+    ):
+        output = BigIntegerField()
+    return (
+        CollaborationItem.objects.filter(
+            _types_q(_family(model)), collaboration__in=collaborations
+        )
+        .annotate(key=Cast("object_id", output_field=output))
+        .values("key")
+    )
+
+
+def held_q(model: type, collaborations: QuerySet[Any]) -> Q:
+    """``model``'s rows in ``collaborations``: put in, or part of what was put in, as a condition.
+
+    Reads nothing by itself: the collaborations and their items are subqueries.
+    """
+    from arkitekt_service.collaborations.models import (
+        Collaboration,
+        CollaborationItem,
+    )
+
+    if issubclass(model, Collaboration):
+        return Q(pk__in=collaborations.values("pk"))
+    if issubclass(model, CollaborationItem):
+        return Q(collaboration__in=collaborations)
+    condition = Q(pk__in=_ids(model, collaborations))
+    for whole, path in wholes(model):
+        condition |= Q(**{f"{path}__in": _ids(whole, collaborations)})
+    return condition
+
+
 # --- a guest -----------------------------------------------------------------------------------
 
 
@@ -170,7 +217,7 @@ class CollaborationToken(Protocol):
     @property
     def is_scoped(self) -> bool: ...
 
-    def collabs_here(self, instance: str | None) -> dict[str, tuple[str, ...]]: ...
+    def collab_roles(self) -> dict[str, tuple[str, ...]]: ...
 
 
 class Guest:
@@ -179,13 +226,15 @@ class Guest:
     def __init__(self, token: CollaborationToken | None, organization: object) -> None:
         self.token = token
         self.organization = organization
-        granted = token.collabs_here(current_instance()) if token is not None else {}
-        #: The roles held in each collaboration granted, by collaboration id (collaborations of another organization hold nothing).
-        self.roles: dict[int, frozenset[str]] = {
-            int(collaboration): frozenset(roles)
-            for collaboration, roles in granted.items()
-            if str(collaboration).isdigit()
+        #: The roles held in each collaboration granted, by its key.
+        self.granted: dict[str, frozenset[str]] = {
+            str(UUID(key)): frozenset(roles)
+            for key, roles in (
+                token.collab_roles() if token is not None else {}
+            ).items()
+            if _is_key(key)
         }
+        self._roles: dict[int, frozenset[str]] | None = None
         self._rows: dict[type, dict[str, frozenset[int]]] = {}
         self._held: dict[type, dict[str, set[int]]] | None = None
         self._read_at = _changes[0]
@@ -199,51 +248,33 @@ class Guest:
         """Read again what was read: after a write (a mutation), what is part of a collaboration may have grown."""
         self._rows, self._held, self._read_at = {}, None, _changes[0]
 
+    @property
+    def roles(self) -> dict[int, frozenset[str]]:
+        """The roles held in each collaboration granted, by this service's row of it (read once).
+
+        Collaborations of another organization, and those nothing was put in here, hold nothing.
+        """
+        if self._roles is None:
+            from arkitekt_service.collaborations.models import Collaboration
+
+            self._roles = {
+                pk: self.granted[str(key)]
+                for pk, key in Collaboration.objects.filter(
+                    key__in=list(self.granted), organization=self.organization
+                ).values_list("pk", "key")
+            }
+        return self._roles
+
     def _collaborations(self) -> QuerySet[Any]:
         from arkitekt_service.collaborations.models import Collaboration
 
         return Collaboration.objects.filter(
-            pk__in=list(self.roles), organization=self.organization
-        )
-
-    def _items(self, models: Iterable[type]) -> QuerySet[Any]:
-        from arkitekt_service.collaborations.models import CollaborationItem
-
-        return CollaborationItem.objects.filter(
-            _types_q(models), collaboration__in=self._collaborations()
-        )
-
-    def _ids(self, model: type) -> QuerySet[Any]:
-        """The ids of ``model``'s rows put in the guest's collaborations, as a subquery (``object_id`` cast to the key)."""
-        pk = model._meta.pk
-        output = pk.target_field if isinstance(pk, ForeignKey) else pk
-        if output.get_internal_type() in (
-            "AutoField",
-            "BigAutoField",
-            "SmallAutoField",
-        ):
-            output = BigIntegerField()
-        return (
-            self._items(_family(model))
-            .annotate(key=Cast("object_id", output_field=output))
-            .values("key")
+            key__in=list(self.granted), organization=self.organization
         )
 
     def q(self, model: type) -> Q:
         """``model``'s rows in the guest's collaborations, as a condition: nothing is read until it is used."""
-        from arkitekt_service.collaborations.models import (
-            Collaboration,
-            CollaborationItem,
-        )
-
-        if issubclass(model, Collaboration):
-            return Q(pk__in=self._collaborations().values("pk"))
-        if issubclass(model, CollaborationItem):
-            return Q(collaboration__in=self._collaborations())
-        condition = Q(pk__in=self._ids(model))
-        for whole, path in wholes(model):
-            condition |= Q(**{f"{path}__in": self._ids(whole)})
-        return condition
+        return held_q(model, self._collaborations())
 
     def _all_items(self) -> dict[type, dict[str, set[int]]]:
         """What was put in the guest's collaborations, by model, then object id, with the collaborations holding it. Read once."""
@@ -306,7 +337,7 @@ class Guest:
                     if not collaborations_of:
                         continue
                     for pk, root in kind._base_manager.filter(
-                        **{f"{path}__in": self._ids(whole)}
+                        **{f"{path}__in": _ids(whole, self._collaborations())}
                     ).values_list("pk", path):
                         held[str(pk)] |= collaborations_of.get(str(root), set())
         self._rows[model] = {
@@ -467,10 +498,10 @@ __all__ = [
     "Guest",
     "arequire_in_collaboration",
     "at_root",
-    "current_instance",
     "current_token",
     "enforce",
     "guest_of",
+    "held_q",
     "kante_narrow",
     "not_part_of",
     "object_scope",

@@ -29,6 +29,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from django.db.models import Q
+
 IDENTIFIER = re.compile(r"^@[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 #: What a descriptor's value is; ``ANY`` when the service does not say.
@@ -75,6 +77,18 @@ class Structure:
     depends: Callable[[Any], Iterable[Any]] | None = field(default=None, compare=False)
     #: What an object is shared with, when no required, cascading key says so: a lens's dataset.
     whole: Callable[[Any], Any] | None = field(default=None, compare=False)
+    #: The objects a workflow (a root task id) created, as a condition, where koherent cannot
+    #: tell (:func:`koherent.lookups.created_under` reads ``created_through`` or the history).
+    created_under: Callable[[str], Q] | None = field(default=None, compare=False)
+
+    def made_in(self, root_task_id: str, organization: object = None) -> Q | None:
+        """The objects the workflow ``root_task_id`` created, as a ``Q``; None when nothing says.
+
+        Held to ``organization``'s tasks when given: a workflow is one organization's.
+        """
+        if self.created_under is not None:
+            return self.created_under(root_task_id)
+        return recorded_under(self.model, root_task_id, organization)
 
     def dependencies(self, obj: object) -> list[Any]:
         """What ``obj`` needs to be seen, besides what is part of it: ``depends(obj)``, Nones dropped."""
@@ -103,3 +117,18 @@ class Structure:
             "description": self.description,
             "descriptors": [d.manifest() for d in self.descriptors],
         }
+
+
+def recorded_under(
+    model: type, root_task_id: str, organization: object = None
+) -> Q | None:
+    """What koherent recorded the workflow ``root_task_id`` created of ``model``: through its
+    ``created_through`` key or its history. None without koherent, or when ``model`` records neither.
+    """
+    from django.apps import apps
+
+    if not apps.is_installed("koherent"):
+        return None
+    from koherent.lookups import created_under
+
+    return created_under(model, root_task_id, organization=organization)

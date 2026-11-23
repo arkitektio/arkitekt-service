@@ -38,6 +38,9 @@ class Shelf(Described):
         related_name="+",
     )
 
+    #: The workflow (root task) that made it, as the workflow-sharing tests say it.
+    made_in = models.CharField(max_length=100, null=True, blank=True)
+
     class Meta:
         app_label = "test_app"
 
@@ -46,6 +49,9 @@ class Book(Described):
     """Hosted and described, never signalled."""
 
     shelf = models.ForeignKey(Shelf, on_delete=models.CASCADE, related_name="books")
+
+    #: The workflow (root task) that made it, as the workflow-sharing tests say it.
+    made_in = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         app_label = "test_app"
@@ -97,6 +103,9 @@ class Loan(models.Model):
     shelf = models.ForeignKey(
         Shelf, null=True, on_delete=models.SET_NULL, related_name="loans"
     )
+
+    #: The workflow (root task) that made it, as the workflow-sharing tests say it.
+    made_in = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         app_label = "test_app"

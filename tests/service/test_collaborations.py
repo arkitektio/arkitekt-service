@@ -36,14 +36,12 @@ from arkitekt_service.graphql import (  # noqa: E402
 from arkitekt_service.service import Service  # noqa: E402
 from test_app.models import Book, Label, Loan, Shelf  # noqa: E402
 
-INSTANCE = "12"
-
 
 @dataclass
 class Token:
     """A stand-in for authentikate's token: a guest's when it lists collaborations."""
 
-    collabs: dict[str, dict[str, list[str]]] | None = None
+    collabs: dict[str, list[str]] | None = None
     sub: str = "guest"
     _: Any = field(default=None, repr=False)
 
@@ -51,18 +49,16 @@ class Token:
     def is_scoped(self) -> bool:
         return self.collabs is not None
 
-    def collabs_here(self, instance: str | None) -> dict[str, tuple[str, ...]]:
+    def collab_roles(self) -> dict[str, tuple[str, ...]]:
         return {
             collaboration: tuple(roles)
-            for collaboration, roles in (self.collabs or {})
-            .get(str(instance), {})
-            .items()
+            for collaboration, roles in (self.collabs or {}).items()
         }
 
 
 def granted(**collaborations: list[str]) -> Token:
-    """A guest's token granting ``{collaboration id: roles}`` on this instance (``granted(**{"5": ["editor"]})``)."""
-    return Token({INSTANCE: dict(collaborations)})
+    """A guest's token granting ``{collaboration key: roles}`` (``granted(**{key: ["editor"]})``)."""
+    return Token(dict(collaborations))
 
 
 @pytest.fixture(autouse=True)
@@ -143,7 +139,7 @@ class TestWhatIsInASpace:
     ) -> None:
         items.add(library.collaboration, library.shelves[0])
         late = Book.objects.create(shelf=library.shelves[0])
-        seen = guest(library, granted(**{str(library.collaboration.pk): []}))
+        seen = guest(library, granted(**{str(library.collaboration.key): []}))
         assert seen.sees(library.books[0]) and seen.sees(late)
         assert not seen.sees(library.books[1])
         assert not seen.sees(
@@ -193,7 +189,7 @@ class TestWhatIsInASpace:
             assert wholes(Book) == ()
             items.add(library.collaboration, library.shelves[0])
             assert not guest(
-                library, granted(**{str(library.collaboration.pk): []})
+                library, granted(**{str(library.collaboration.key): []})
             ).sees(library.books[0])
         finally:
             guests._references.clear()
@@ -232,7 +228,7 @@ class TestAGuest:
             name="Elsewhere",
         )
         items.add(elsewhere, library.shelves[1])
-        seen = guest(library, granted(**{str(elsewhere.pk): ["editor"]}))
+        seen = guest(library, granted(**{str(elsewhere.key): ["editor"]}))
         assert not seen.sees(library.shelves[1])
 
     def test_roles_hold_only_inside_their_collaboration(self, library: Library) -> None:
@@ -243,7 +239,7 @@ class TestAGuest:
         items.add(other, library.shelves[1])
         seen = guest(
             library,
-            granted(**{str(library.collaboration.pk): ["editor"], str(other.pk): []}),
+            granted(**{str(library.collaboration.key): ["editor"], str(other.key): []}),
         )
         assert seen.holds(library.books[0], any_role_of=["editor", "admin"])
         assert not seen.holds(library.books[1], any_role_of=["editor"])
@@ -253,7 +249,7 @@ class TestAGuest:
         self, library: Library, in_organization: None
     ) -> None:
         items.add(library.collaboration, library.shelves[0])
-        token = granted(**{str(library.collaboration.pk): ["editor"]})
+        token = granted(**{str(library.collaboration.key): ["editor"]})
         require_in_collaboration(library.books[0], any_role_of=["editor"], token=token)
         with pytest.raises(ShareInsufficient):
             require_in_collaboration(
@@ -272,7 +268,7 @@ class TestAGuest:
         django_assert_num_queries: DjangoAssertNumQueries,
     ) -> None:
         items.add(library.collaboration, library.shelves[0])
-        token = granted(**{str(library.collaboration.pk): []})
+        token = granted(**{str(library.collaboration.key): []})
         with django_assert_num_queries(0):
             narrowed = object_scope(Book.objects.all(), token)
         assert list(narrowed) == [library.books[0]]
@@ -404,7 +400,7 @@ def test_a_guest_is_handed_only_what_is_in_their_collaborations(
     library: Library, lending: Service, optimizer: bool
 ) -> None:
     items.add(library.collaboration, library.shelves[0])
-    Authenticated.token = granted(**{str(library.collaboration.pk): []})
+    Authenticated.token = granted(**{str(library.collaboration.key): []})
     built = schema(*([DjangoOptimizerExtension()] if optimizer else []))
     first, mine = library.shelves[0], library.books[0]
 
@@ -442,7 +438,7 @@ def test_who_keeps_what_a_guest_is_handed_comes_with_it(
     )
     Shelf.objects.update(keeper=keeper)
     items.add(library.collaboration, library.shelves[0])
-    Authenticated.token = granted(**{str(library.collaboration.pk): []})
+    Authenticated.token = granted(**{str(library.collaboration.key): []})
     built = schema(*([DjangoOptimizerExtension()] if optimizer else []))
 
     result = built.execute_sync(
@@ -472,7 +468,7 @@ def test_who_keeps_what_a_guest_is_handed_comes_with_it(
 def test_a_root_field_handing_out_no_objects_is_closed_to_a_guest(
     library: Library,
 ) -> None:
-    Authenticated.token = granted(**{str(library.collaboration.pk): []})
+    Authenticated.token = granted(**{str(library.collaboration.key): []})
     result = schema().execute_sync("{ tally { total } }")
     (error,) = result.errors
     assert (
@@ -502,25 +498,10 @@ def test_behind_the_gate_the_service_shares() -> None:
     assert Service.sharing == [plain]
 
 
-def test_guests_let_in_without_an_instance_is_a_warning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from arkitekt_service.server.checks import check_guests
-
-    monkeypatch.setattr(
-        "arkitekt_service.collaborations.guests.current_instance", lambda: None
-    )
-    assert [m.id for m in check_guests(None)] == ["arkitekt.W011"]
-    monkeypatch.setattr(
-        "arkitekt_service.collaborations.guests.current_instance", lambda: "12"
-    )
-    assert check_guests(None) == []
-
-
 def test_a_guest_reads_again_once_a_collaboration_changed(
     library: Library, in_organization: None
 ) -> None:
-    seen = guest(library, granted(**{str(library.collaboration.pk): []}))
+    seen = guest(library, granted(**{str(library.collaboration.key): []}))
     assert not seen.sees(library.shelves[0])
     items.add(library.collaboration, library.shelves[0])
     assert seen.sees(library.shelves[0]) and seen.sees(library.books[0])

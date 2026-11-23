@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 
 class Collaboration(models.Model):
-    """What a guest granted it sees of an organization: the objects put in it, and their parts."""
+    """What a guest granted it sees of an organization: the objects put in it, and their parts.
 
+    A collaboration is lok's, one ``key`` across the hub: a guest's token names it by that key,
+    and every service of the organization holds what it put in it under a row with the same key,
+    made the first time something is put in (:func:`ensure`). The name is a label, given by
+    whoever put the first thing in; lok's is the one people read.
+    """
+
+    key = models.UUIDField(
+        unique=True,
+        default=uuid.uuid4,
+        help_text="The collaboration's key across the hub: lok's, and what a guest's token names",
+    )
     organization = models.ForeignKey(
         "authentikate.Organization",
         on_delete=models.CASCADE,
         related_name="collaborations",
     )
-    name = models.CharField(max_length=200)
+    name = models.CharField(max_length=200, blank=True, default="")
     description = models.TextField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -27,7 +40,36 @@ class Collaboration(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        return self.name
+        return str(self.name or self.key)
+
+
+class CollaborationOfAnotherOrganization(ValueError):
+    """The key names a collaboration another organization put objects in here."""
+
+
+def ensure(
+    key: uuid.UUID | str,
+    organization: object,
+    *,
+    name: str | None = None,
+    by: object = None,
+) -> Collaboration:
+    """This service's row of the collaboration ``key``, made on first use for ``organization``.
+
+    A key another organization uses here is refused: a collaboration is one organization's.
+    """
+    found, created = Collaboration.objects.get_or_create(
+        key=key,
+        defaults={"organization": organization, "name": name or "", "created_by": by},
+    )
+    if not created and found.organization_id != getattr(organization, "pk", None):  # type: ignore[attr-defined]
+        raise CollaborationOfAnotherOrganization(
+            f"Collaboration {key} belongs to another organization"
+        )
+    if not created and name and not found.name:
+        found.name = name
+        found.save(update_fields=["name"])
+    return found
 
 
 class CollaborationItem(models.Model):

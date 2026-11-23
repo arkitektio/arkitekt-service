@@ -12,6 +12,7 @@ handed out without what it cannot be read without.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
@@ -92,6 +93,8 @@ def whole_of(obj: Model) -> Model | None:
 
 def holds(collaboration: Collaboration, obj: Model) -> bool:
     """Whether ``obj`` is in ``collaboration``: put in, or part of something that is."""
+    if collaboration.pk is None:
+        return False  # a collaboration nothing was put in here yet holds nothing here
     if CollaborationItem.objects.filter(
         collaboration=collaboration,
         content_type=content_type_of(obj),
@@ -186,13 +189,122 @@ def include(obj: Model, *, alongside: Model, by: object = None) -> None:
         add(item.collaboration, obj, by=by, because_of=item)
 
 
+# --- a workflow ---------------------------------------------------------------------------------
+
+
+def _row(obj: Model) -> tuple[type, str]:
+    """``obj``'s row, however it is read: as itself, or as a parent (multi-table inheritance)."""
+    parents = type(obj)._meta.get_parent_list()
+    return (parents[-1] if parents else type(obj), str(obj.pk))
+
+
+@dataclass(frozen=True)
+class Skipped:
+    """Created in the workflow, but part of ``whole``, which was made before it and is not shared."""
+
+    obj: Model
+    whole: Model
+
+
+@dataclass
+class WorkflowShare:
+    """What sharing a workflow put in a collaboration (or, tried, would put in)."""
+
+    #: Put in by hand (or kept, if they were in already).
+    added: list[Model] = field(default_factory=list)
+    #: Parts of what was put in: in the collaboration with their whole, never written.
+    covered: list[Model] = field(default_factory=list)
+    #: Parts of a whole made before the workflow, and not in the collaboration: left out.
+    skipped: list[Skipped] = field(default_factory=list)
+    #: Structures that cannot say what created their objects: nothing of them was looked at.
+    unknown: list[str] = field(default_factory=list)
+
+
+def created_in(
+    root_task_id: str, organization: object
+) -> tuple[list[Model], list[str]]:
+    """Every hosted object the workflow ``root_task_id`` created in ``organization``, and the
+    structures that cannot say."""
+    from arkitekt_service.service.service import Service
+
+    found: dict[tuple[type, str], Model] = {}
+    unknown: list[str] = []
+    for service in Service.sharing:
+        for structure in service.structures.values():
+            condition = structure.made_in(root_task_id, organization)
+            if condition is None:
+                unknown.append(structure.identifier)
+                continue
+            for obj in structure.model._base_manager.filter(condition):
+                found.setdefault(_row(obj), obj)
+    return list(found.values()), unknown
+
+
+def share_workflow(
+    collaboration: Collaboration,
+    root_task_id: str,
+    *,
+    by: object = None,
+    dry_run: bool = False,
+) -> WorkflowShare:
+    """Put what the workflow ``root_task_id`` created in ``collaboration``, as it is now.
+
+    A whole goes in by hand; a part comes along with its whole (its required, cascading key) and
+    is not written, or goes in after it (a declared ``whole``). A part of a whole made before the
+    workflow and not in the collaboration is left out (:class:`Skipped`): the workflow does not
+    hand out what it did not make. With ``dry_run``, nothing is written: the report says what would be.
+    """
+    from arkitekt_service.service.service import Service
+
+    objects, unknown = created_in(root_task_id, collaboration.organization)
+    report = WorkflowShare(unknown=unknown)
+    made = {_row(obj) for obj in objects}
+    placed: set[tuple[type, str]] = set()
+    pending = list(objects)
+    with transaction.atomic():
+        while pending:
+            waiting: list[Model] = []
+            for obj in pending:
+                whole = whole_of(obj)
+                if whole is not None and _row(whole) not in placed:
+                    if _row(whole) in made:
+                        waiting.append(
+                            obj
+                        )  # its whole is the workflow's, and not placed yet
+                        continue
+                    if not holds(collaboration, whole):
+                        report.skipped.append(Skipped(obj, whole))
+                        continue
+                structure = Service.hosting(obj)
+                if whole is not None and (structure is None or structure.whole is None):
+                    report.covered.append(obj)  # part of its whole: in with it, live
+                else:
+                    report.added.append(obj)
+                    if not dry_run:
+                        add(collaboration, obj, by=by)
+                placed.add(_row(obj))
+            if len(waiting) == len(pending):
+                # Their wholes were made in the workflow, but are themselves left out.
+                for obj in waiting:
+                    whole = whole_of(obj)
+                    assert whole is not None
+                    report.skipped.append(Skipped(obj, whole))
+                break
+            pending = waiting
+    return report
+
+
 __all__ = [
     "SharedWithItsWhole",
+    "Skipped",
+    "WorkflowShare",
     "add",
     "content_type_of",
+    "created_in",
     "holds",
     "include",
     "refresh",
     "remove",
+    "share_workflow",
     "whole_of",
 ]

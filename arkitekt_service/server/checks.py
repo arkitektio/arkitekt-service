@@ -45,25 +45,3 @@ def check_unread_configuration(
             for key, now in found.renamed
         ),
     ]
-
-
-@register()
-def check_guests(
-    app_configs: Sequence[AppConfig] | None, **kwargs: object
-) -> list[CheckMessage]:
-    """``arkitekt.W011``: guests are let in, and the audience names no instance their collaborations are read for."""
-    from arkitekt_service.service.service import Service
-
-    if not Service.sharing:
-        return []
-    from arkitekt_service.collaborations.guests import current_instance
-
-    if current_instance() is None:
-        return [
-            Warning(
-                "Guests are let in, but this service's audience names no instance (it is *): their tokens are refused.",
-                hint="Set AUTHENTIKATE.audience to this service instance's id at the coordination server (konstruktor renders it).",
-                id="arkitekt.W011",
-            )
-        ]
-    return []

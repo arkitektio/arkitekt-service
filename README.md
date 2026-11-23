@@ -345,12 +345,14 @@ row again after a key changed its meaning.
 ## Collaborations: what a guest is let in to
 
 A guest of an organization sees nothing of it but the *collaborations* granted to them, with roles that
-hold only inside each (the coordination server lists them in the token's `collabs`; authentikate
-reads it). A collaboration lives in the service that holds its objects:
+hold only inside each. A collaboration is lok's: it makes it, names it by one key across the hub,
+and lists the keys a guest holds in the token's `collabs` (authentikate reads it). Each service holds
+what was put in it there, under a row with that key, made the first time something is
+(`collaborations.models.ensure(key, organization)`):
 `INSTALLED_APPS += ["arkitekt_service.collaborations"]` (needs the `authentikate` extra).
 
 What is in a collaboration is data: a full member puts objects in (`collaborations.items.add(collaboration, scene)`, or
-the `addToCollaboration` mutation of `arkitekt_service.collaborations.graphql`). With each comes what its
+the `addToCollaboration` / `addManyToCollaboration` mutations of `arkitekt_service.collaborations.graphql`). With each comes what its
 structure says it needs to be seen, and what is part of any of them (a row whose required,
 cascading foreign keys lead to one) is in the collaboration live:
 
@@ -372,8 +374,30 @@ For a guest, every read is held to their collaborations:
   `require_in_collaboration(target, any_role_of=["editor"])`.
 
 `annotate_schema(schema, service)` adds `@identified(by: "@mikro/scene")` to each structure's type
-and, behind the gate, says the service lets guests in. The instance a guest's collaborations are read
-for is the service's `AUTHENTIKATE.audience`, which konstruktor renders as its instance id.
+and, behind the gate, says the service lets guests in.
+
+### Sharing a workflow
+
+A workflow is a root task: the task a person started, whose id every task it causes carries
+(koherent's `Task.root_task_id`). `shareWorkflow(input: {collaboration, rootTask, dryRun})`
+(`collaborations.items.share_workflow`) puts what it created here in a collaboration, as it is now:
+
+- a whole goes in by hand; a part comes along with it, or goes in after it (a declared `whole`);
+- a part of something made *before* the workflow, and not in the collaboration, is left out and
+  reported (`skipped`): the workflow does not hand out what it did not make;
+- what the workflow makes later is not in it: share it again.
+
+What a workflow created, koherent says: a model's `created_through` key, or the CREATE row of its
+history. A structure that keeps neither says it itself
+(`service.structure(..., created_under=lambda root: Q(...))`); one that cannot is reported as
+`unknown`. No service knows which others a workflow touched: the client calls `shareWorkflow` on
+each, with the same key.
+
+### Filtering by collaboration and workflow
+
+Mix `collaborations.filters.SharingFilterMixin` into a list's filter, and it takes
+`inCollaboration: "<key>"` (what is in it: put in, or part of what was) and
+`createdUnder: "<root task id>"` (what the workflow created), at any depth of the filter.
 
 ## A Django server like the others
 

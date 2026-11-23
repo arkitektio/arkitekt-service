@@ -225,6 +225,7 @@ class Service:
         description: str | None = None,
         depends: Callable[[Any], Iterable[Any]] | None = None,
         whole: Callable[[Any], Any] | None = None,
+        created_under: Callable[[str], Q] | None = None,
     ) -> Structure:
         """Declare that this service hosts ``model`` as the structure ``identifier``.
 
@@ -249,8 +250,13 @@ class Service:
         key) is shared with that one, never alone: a collaboration refuses it unless its whole is in.
         ``whole(obj)`` names that whole where no such key does (a lens whose dataset key is nullable).
 
+        ``created_under(root_task_id)`` is the condition for the objects a workflow created, where
+        koherent cannot tell from a ``created_through`` key or the model's history: what sharing a
+        workflow (:func:`arkitekt_service.collaborations.items.share_workflow`) puts in.
+
         For a service with a contract (``hosts``), the structure is declared there and this
-        binds it: ``structure(model, identifier, describe=..., depends=..., whole=...)`` and nothing else.
+        binds it: ``structure(model, identifier, describe=..., depends=..., whole=..., created_under=...)``
+        and nothing else.
         """
         check_identifier(identifier)
         if self.hosts is not None:
@@ -288,6 +294,7 @@ class Service:
             describe,
             depends,
             whole,
+            created_under,
         )
         existing = self._structures.get(identifier)
         if existing is not None:

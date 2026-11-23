@@ -184,7 +184,7 @@ def test_a_guest_counts_and_pages_only_their_own(
     filled: tuple[Library, Collaboration],
 ) -> None:
     _, other = filled
-    Authenticated.token = granted(**{str(other.pk): []})
+    Authenticated.token = granted(**{str(other.key): []})
 
     listed = schema().execute_sync(
         "{ collaborations(pagination: { offset: 0, limit: 1 }) { name itemCount } }"
