@@ -84,6 +84,37 @@ Locally (`deployments/next`) a service runs `arkitekt-service standalone --debug
    is left and named. A service whose deletes owe something elsewhere (a feed entry its
    writers record) does it from the `pruning` signal.
 
+### Scheduled jobs
+
+A job can say when it should run by itself, and how it behaves when it does. All of it is a
+suggestion to the installer: the operator turns a schedule on or off and may change when it
+runs. konstruktor runs them; nothing in a service keeps a timer.
+
+```python
+"digest_bigfiles": Job(
+    ("digest_bigfiles",),
+    "Hash the stored files whose digest is owed",
+    schedule="daily 01:00-06:00",  # hub-local time; done by 06:00
+    long_running=True,             # may take hours: warned about, never in `setup=`
+    backlog=("--backlog",),        # what is owed, from the database alone
+    deadline="--until",            # told the window's end; starts no new work after it
+),
+```
+
+1. **A schedule is `hourly`, `daily HH:MM[-HH:MM]` or `weekly <mon..sun> HH:MM[-HH:MM]`,** in
+   the hub's local time. The part after `-` is the window: a hub that was off at the start
+   still runs the job while the window is open, and without an end it is one hour. Anything
+   else is refused where the contract is written.
+2. **A scheduled job is safe to run on a serving hub, again and again.** It finds what is owed,
+   does it, and does nothing when nothing is. One that deletes data still needs `--yes` and is
+   therefore never scheduled.
+3. **`long_running` jobs are never in `setup=`**: a hub waits for its setup before it serves.
+4. **A backlog answers from the database alone, quickly,** and ends its output with one JSON
+   line holding an `items` count (`{"items": 312, "bytes": 1800000000000}`). A scheduled run
+   whose backlog owes nothing is skipped. `prepared.backlogs_answer(contract)` checks it.
+5. **A job that takes a `deadline` stops starting work at it** and exits 0 with what is left
+   still owed, so the next window picks it up. One that cannot stop part-way declares none.
+
 ### Versions
 
 1. A release that only works beside certain versions of a peer says so:
@@ -100,4 +131,5 @@ Locally (`deployments/next`) a service runs `arkitekt-service standalone --debug
 - [ ] existing rows rewritten: a data migration (database only), or a re-runnable job in `setup=` — with a test
 - [ ] new command: declared as a job with a summary, or not added
 - [ ] the service's `CLAUDE.md` lists the job
+- [ ] a scheduled job: re-runnable on a serving hub, its backlog answers (`prepared.backlogs_answer`), a deadline honoured if declared
 - [ ] `tests/test_prepared.py` (`arkitekt_service.prepared`) passes: migrations committed, every job a command, setup re-runnable

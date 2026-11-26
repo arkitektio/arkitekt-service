@@ -421,6 +421,10 @@ def test_describe_lists_the_jobs_and_which_of_them_migrate_runs(
         "command": ["arkitekt-service", "run", "ensureadmin"],
         "summary": "Create the operator account",
         "includes": [],
+        "schedule": None,
+        "long_running": False,
+        "backlog": None,
+        "deadline": None,
     }
     # `plan` is every service's.
     assert set(said["jobs"]) == {

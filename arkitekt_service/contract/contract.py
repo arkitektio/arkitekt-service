@@ -13,6 +13,7 @@ from arkitekt_service.contract import description as described
 from arkitekt_service.contract.description import Description
 from arkitekt_service.contract.facts import Facts
 from arkitekt_service.contract.json_types import JSON
+from arkitekt_service.contract.schedule import check as check_schedule
 
 #: Names the module holding a service's ``contract``, in its image.
 ENVIRONMENT = "ARKITEKT_SERVICE"
@@ -61,6 +62,21 @@ class Job:
     """The ``manage.py`` command and its arguments: ``("ensureadmin",)``."""
     summary: str = ""
     """What it does, in a line an operator reads."""
+    schedule: str | None = None
+    """When the service suggests it runs by itself (:mod:`~arkitekt_service.contract.schedule`:
+    ``daily 01:00-06:00``). A suggestion: an installer that schedules jobs offers it to the
+    operator, who can change or switch it off. None for a job that is only run when asked."""
+    long_running: bool = False
+    """That a run may take hours (it reads every stored file, say): an installer warns before
+    running it by hand, and it may never be part of the setup, which a hub waits for."""
+    backlog: tuple[str, ...] | None = None
+    """Arguments that make the job say what it still owes instead of doing it, reading only
+    the database: its last line of output is JSON with an ``items`` count (``{"items": 312,
+    "bytes": 1.8e12}``). An installer shows it, and skips a scheduled run that owes nothing."""
+    deadline: str | None = None
+    """The option the job takes a deadline with (``--until``): it is then passed the end of its
+    schedule's window as an ISO 8601 time, and starts no new work after it. A job that takes
+    none runs to its end, however long that is."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,6 +130,17 @@ class Contract:
             raise ValueError(
                 f"setup names {', '.join(unknown)}, which {self.description.name} does not declare as a job"
             )
+        slow = [name for name in self.setup if self.jobs[name].long_running]
+        if slow:
+            raise ValueError(
+                f"setup names {', '.join(slow)}, which may take hours: a hub waits for its setup before it serves, so run it as a job instead"
+            )
+        for name, job in self.jobs.items():
+            if job.schedule is not None:
+                try:
+                    check_schedule(job.schedule)
+                except ValueError as error:
+                    raise ValueError(f"job `{name}`: {error}") from None
 
     def _source(self) -> described.Source | None:
         return _built_from(self.description.source)
@@ -142,7 +169,16 @@ class Contract:
                 summary="Create an account for the service's admin, from DJANGO_SUPERUSER_USERNAME, _PASSWORD and _EMAIL.",
             ),
             **{
-                name: described.Job(command=[*runner, "run", name], summary=job.summary)
+                name: described.Job(
+                    command=[*runner, "run", name],
+                    summary=job.summary,
+                    schedule=job.schedule,
+                    long_running=job.long_running,
+                    backlog=[*runner, "run", name, *job.backlog]
+                    if job.backlog is not None
+                    else None,
+                    deadline=job.deadline,
+                )
                 for name, job in self.jobs.items()
             },
         }

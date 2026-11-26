@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from arkitekt_service.contract.schedule import check as check_schedule
+
 #: A name Postgres takes as it is written: a lowercase letter, then lowercase letters, digits
 #: and underscores. Nothing that would have to be quoted, so that whoever creates a database
 #: or a role can say its name anywhere without escaping it. A service's name and the names
@@ -179,6 +181,27 @@ class Job(Said):
         default_factory=list,
         description="Other jobs this one runs as part of itself, in order: `migrate` includes the service's setup.",
     )
+    schedule: str | None = Field(
+        default=None,
+        description="When the service suggests the job runs by itself, in the hub's local time: `hourly`, `daily HH:MM[-HH:MM]` or `weekly <mon..sun> HH:MM[-HH:MM]` (the part after `-` is the window it must be done in). A suggestion the operator may change or switch off; absent for a job only run when asked.",
+    )
+    long_running: bool = Field(
+        default=False,
+        description="That a run may take hours: an installer warns before running it by hand.",
+    )
+    backlog: list[str] | None = Field(
+        default=None,
+        description="What to run, like `command`, to learn what the job still owes without doing it: its last line of output is JSON with an `items` count. A scheduled run that owes nothing is skipped.",
+    )
+    deadline: str | None = Field(
+        default=None,
+        description="The option the job takes a deadline with (`--until`): a scheduled run is passed its window's end, as an ISO 8601 time, and starts no new work after it.",
+    )
+
+    @field_validator("schedule")
+    @classmethod
+    def _a_schedule(cls, schedule: str | None) -> str | None:
+        return None if schedule is None else check_schedule(schedule)
 
 
 class Sidecar(Said):

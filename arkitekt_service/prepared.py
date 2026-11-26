@@ -23,12 +23,18 @@ every build — changes nothing the second time. Each is one call::
     def test_the_setup_is_safe_to_run_again() -> None:
         prepared.setup_runs_again(contract)
 
+
+    @pytest.mark.django_db
+    def test_every_backlog_says_what_is_owed() -> None:
+        prepared.backlogs_answer(contract)
+
 The rules these hold a service to are in ``docs/migrations-and-jobs.md``.
 """
 
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from django.apps import apps
@@ -100,3 +106,29 @@ def setup_runs_again(contract: Contract) -> None:
                     raise AssertionError(
                         f"setup job `{name}` failed on its {attempt} run (exit {stopped.code})"
                     ) from None
+
+
+def backlogs_answer(contract: Contract) -> None:
+    """Every job that declares a backlog answers it as an installer reads it: JSON with an ``items`` count, on its last line."""
+    for name, job in contract.jobs.items():
+        if job.backlog is None:
+            continue
+        said = io.StringIO()
+        try:
+            call_command(*job.manage, *job.backlog, stdout=said)
+        except SystemExit as stopped:
+            if stopped.code:
+                raise AssertionError(
+                    f"the backlog of `{name}` failed (exit {stopped.code})"
+                ) from None
+        lines = [line for line in said.getvalue().splitlines() if line.strip()]
+        assert lines, f"the backlog of `{name}` said nothing"
+        try:
+            answer = json.loads(lines[-1])
+        except ValueError:
+            raise AssertionError(
+                f"the backlog of `{name}` did not end on a JSON line: {lines[-1]!r}"
+            ) from None
+        assert isinstance(answer, dict) and isinstance(answer.get("items"), int), (
+            f"the backlog of `{name}` names no `items` count: {answer!r}"
+        )
